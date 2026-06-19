@@ -332,8 +332,13 @@ const CONFIG = {
   // real station (exact label stock + pretty layout), save the .label, and paste
   // its <DieCutLabel>…</DieCutLabel> XML here. Give each TextObject one of these
   // names: PART, PO, MATERIAL, SIZE, HEAT, QTY. The app then merges the data into
-  // your template via LabelSet. Leave null to use the built-in auto-fit layout.
+  // your template via LabelSet. Leave null to use the built-in layout below.
   labelTemplateXml: null,
+  // Built-in fallback label geometry. These exact values were validated against
+  // the live DYMO Connect service (RenderLabel -> 200). The Id/PaperName MUST be
+  // a label the DYMO software recognizes — set these to match the shop's actual
+  // tag, or (better) use labelTemplateXml from DYMO Connect for the real wrap tag.
+  label: { id:"Address", paperName:"30252 Address", drawW:1581, drawH:5040, bx:332, by:150, bw:4822, bh:1260, fontSize:12 },
 };
 
 /* ========================= DEMO DATA ========================= */
@@ -436,18 +441,13 @@ function printLines(rec){
     [f.heat?`HEAT ${f.heat}`:"", f.qty?`QTY ${f.qty}`:""].filter(Boolean).join("      "),
   ].filter(Boolean);
 }
+// Built-in label, using the exact structure validated against the live DYMO
+// Connect service (RenderLabel -> 200). One ShrinkToFit text object so the
+// separated lines fit whatever label the shop sets in CONFIG.label.
 function buildLabelXml(rec){
+  const L=CONFIG.label;
   return `<?xml version="1.0" encoding="utf-8"?>
-<DieCutLabel Version="8.0" Units="twips">
-  <PaperOrientation>Landscape</PaperOrientation><Id>LargeMultipurpose</Id><PaperName>30334 2-1/4 in x 1-1/4 in</PaperName>
-  <DrawCommands><RoundRectangle X="0" Y="0" Width="3240" Height="1800" Rx="180" Ry="180"/></DrawCommands>
-  <ObjectInfo><TextObject><Name>CERT</Name><ForeColor Alpha="255" Red="0" Green="0" Blue="0"/><BackColor Alpha="0" Red="255" Green="255" Blue="255"/>
-    <LinkedObjectName/><Rotation>Rotation0</Rotation><IsMirrored>False</IsMirrored><IsVariable>True</IsVariable>
-    <HorizontalAlignment>Left</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><TextFitMode>ShrinkToFit</TextFitMode>
-    <UseFullFontHeight>True</UseFullFontHeight><Verticalized>False</Verticalized>
-    <StyledText><Element><String>${esc(printLines(rec).join("\n"))}</String><Attributes><Font Family="Arial" Size="9" Bold="True"/><ForeColor Alpha="255" Red="0" Green="0" Blue="0"/></Attributes></Element></StyledText>
-  </TextObject><Bounds X="120" Y="100" Width="3000" Height="1600"/></ObjectInfo>
-</DieCutLabel>`;
+<DieCutLabel Version="8.0" Units="twips"><PaperOrientation>Landscape</PaperOrientation><Id>${esc(L.id)}</Id><PaperName>${esc(L.paperName)}</PaperName><DrawCommands><RoundRectangle X="0" Y="0" Width="${L.drawW}" Height="${L.drawH}" Rx="270" Ry="270" /></DrawCommands><ObjectInfo><TextObject><Name>CERT</Name><ForeColor Alpha="255" Red="0" Green="0" Blue="0" /><BackColor Alpha="0" Red="255" Green="255" Blue="255" /><LinkedObjectName /><Rotation>Rotation0</Rotation><IsMirrored>False</IsMirrored><IsVariable>True</IsVariable><HorizontalAlignment>Left</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><TextFitMode>ShrinkToFit</TextFitMode><UseFullFontHeight>True</UseFullFontHeight><Verticalized>False</Verticalized><StyledText><Element><String>${esc(printLines(rec).join("\n"))}</String><Attributes><Font Family="Arial" Size="${L.fontSize}" Bold="True" Italic="False" Underline="False" Strikeout="False" /><ForeColor Alpha="255" Red="0" Green="0" Blue="0" /></Attributes></Element></StyledText></TextObject><Bounds X="${L.bx}" Y="${L.by}" Width="${L.bw}" Height="${L.bh}" /></ObjectInfo></DieCutLabel>`;
 }
 // Merge field values into a shop-designed template by named TextObject.
 function buildLabelSetXml(rec){
