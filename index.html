@@ -131,13 +131,18 @@ aside{display:flex;flex-direction:column;gap:14px;min-height:0;overflow:auto;pad
 .sticker-stage:hover{background:#e7eaee}
 .sticker-stage .zoom-hint{position:absolute;top:8px;right:10px;font-size:10.5px;color:var(--ink3);font-weight:700;text-transform:uppercase;letter-spacing:.04em;opacity:0;transition:.15s}
 .sticker-stage:hover .zoom-hint{opacity:1}
-.sticker{display:flex;background:#fff;border-radius:5px;box-shadow:0 2px 8px rgba(0,0,0,.14);color:#000;font-family:"Arial Narrow",Arial,sans-serif}
-.sticker .face{padding:9px 13px;min-width:150px}
-.sticker .perf{border-left:2px dashed #b6b6b6;margin:7px 0}
-.sticker .sl{font-size:12.5px;font-weight:800;line-height:1.55;white-space:nowrap}
-.sticker .sl.dim{font-weight:600}
-.sticker.big .face{min-width:320px;padding:22px 30px}
-.sticker.big .sl{font-size:27px;line-height:1.5}
+/* On-screen sticker — clean, separated info zones. Mirrors the printed layout. */
+.sticker{background:#fff;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,.16);color:#000;font-family:Arial,Helvetica,sans-serif;width:300px;padding:12px 16px;border:1px solid #e3e3e3}
+.sticker .srow{display:flex;align-items:baseline;justify-content:space-between;gap:12px;white-space:nowrap}
+.sticker .big{font-size:15px;font-weight:800;letter-spacing:-.2px}
+.sticker .kv{font-size:13px;font-weight:800}
+.sticker .kv i{font-style:normal;font-weight:700;color:#777;font-size:9.5px;letter-spacing:.06em;margin-right:4px;text-transform:uppercase}
+.sticker .sdiv{height:1px;background:#d8d8d8;margin:8px 0}
+.sticker .smat{font-size:13.5px;font-weight:700;white-space:nowrap}
+.sticker .ssize{font-size:13px;font-weight:600;color:#222;margin-top:2px}
+.sticker.big{width:420px;padding:22px 28px;border-radius:10px}
+.sticker.big .big{font-size:24px} .sticker.big .kv{font-size:20px} .sticker.big .kv i{font-size:12px}
+.sticker.big .smat{font-size:20px} .sticker.big .ssize{font-size:18px} .sticker.big .sdiv{margin:13px 0}
 
 .print-status{display:flex;align-items:center;gap:9px;padding:11px 14px;border-radius:10px;font-weight:600;font-size:13px;cursor:pointer;transition:var(--ease) .15s}
 .print-status.ok{background:var(--green-soft);color:#0f7a37;border:1px solid #bfe6cd}
@@ -323,6 +328,12 @@ const CONFIG = {
   format:{ line1:"{partNumber} PO:{poNumber}", line2:"{material} {spec} {size}", line3:"HT#{heat} QTY {quantity}" },
   copiesPerCert:1,
   pollMs:15000,
+  // GUARANTEED-CORRECT PRINTING: design the master tag once in DYMO Connect on a
+  // real station (exact label stock + pretty layout), save the .label, and paste
+  // its <DieCutLabel>…</DieCutLabel> XML here. Give each TextObject one of these
+  // names: PART, PO, MATERIAL, SIZE, HEAT, QTY. The app then merges the data into
+  // your template via LabelSet. Leave null to use the built-in auto-fit layout.
+  labelTemplateXml: null,
 };
 
 /* ========================= DEMO DATA ========================= */
@@ -413,6 +424,18 @@ async function reconnectDymo(){
   else if(dymoState==="noprinter") toast("DYMO is connected — plug a label printer into this computer","");
 }
 
+// Built-in fallback layout: separated info lines in one auto-fit (ShrinkToFit)
+// text object, so it prints legibly on whatever label size is loaded. For the
+// guaranteed pretty/correct result, set CONFIG.labelTemplateXml (see config note).
+function printLines(rec){
+  const f=fields(rec);
+  return [
+    [f.part, f.po?`PO ${f.po}`:""].filter(Boolean).join("      "),
+    [f.material, f.spec].filter(Boolean).join("  ·  "),
+    f.size,
+    [f.heat?`HEAT ${f.heat}`:"", f.qty?`QTY ${f.qty}`:""].filter(Boolean).join("      "),
+  ].filter(Boolean);
+}
 function buildLabelXml(rec){
   return `<?xml version="1.0" encoding="utf-8"?>
 <DieCutLabel Version="8.0" Units="twips">
@@ -420,17 +443,26 @@ function buildLabelXml(rec){
   <DrawCommands><RoundRectangle X="0" Y="0" Width="3240" Height="1800" Rx="180" Ry="180"/></DrawCommands>
   <ObjectInfo><TextObject><Name>CERT</Name><ForeColor Alpha="255" Red="0" Green="0" Blue="0"/><BackColor Alpha="0" Red="255" Green="255" Blue="255"/>
     <LinkedObjectName/><Rotation>Rotation0</Rotation><IsMirrored>False</IsMirrored><IsVariable>True</IsVariable>
-    <HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><TextFitMode>ShrinkToFit</TextFitMode>
+    <HorizontalAlignment>Left</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><TextFitMode>ShrinkToFit</TextFitMode>
     <UseFullFontHeight>True</UseFullFontHeight><Verticalized>False</Verticalized>
-    <StyledText><Element><String>${esc(lines(rec).join("\n"))}</String><Attributes><Font Family="Arial" Size="9" Bold="True"/><ForeColor Alpha="255" Red="0" Green="0" Blue="0"/></Attributes></Element></StyledText>
+    <StyledText><Element><String>${esc(printLines(rec).join("\n"))}</String><Attributes><Font Family="Arial" Size="9" Bold="True"/><ForeColor Alpha="255" Red="0" Green="0" Blue="0"/></Attributes></Element></StyledText>
   </TextObject><Bounds X="120" Y="100" Width="3000" Height="1600"/></ObjectInfo>
 </DieCutLabel>`;
 }
+// Merge field values into a shop-designed template by named TextObject.
+function buildLabelSetXml(rec){
+  const f=fields(rec);
+  const map={PART:f.part, PO:f.po, MATERIAL:[f.material,f.spec].filter(Boolean).join(" · "), SIZE:f.size, HEAT:f.heat, QTY:f.qty};
+  const objs=Object.entries(map).map(([k,v])=>`<ObjectData Name="${k}"><![CDATA[${v||""}]]></ObjectData>`).join("");
+  return `<?xml version="1.0" encoding="utf-8"?><LabelSet><LabelRecord>${objs}</LabelRecord></LabelSet>`;
+}
 async function dymoPrintOne(rec){
+  const useTpl=!!CONFIG.labelTemplateXml;
   const body=new URLSearchParams();
   body.set("printerName",printerName);
   body.set("printParamsXml",`<LabelWriterPrintParams><Copies>${CONFIG.copiesPerCert}</Copies><PrintQuality>BarcodeAndGraphics</PrintQuality></LabelWriterPrintParams>`);
-  body.set("labelXml",buildLabelXml(rec)); body.set("labelSetXml","");
+  body.set("labelXml", useTpl?CONFIG.labelTemplateXml:buildLabelXml(rec));
+  body.set("labelSetXml", useTpl?buildLabelSetXml(rec):"");
   const r=await fetch(CONFIG.dymoBase+"/PrintLabel",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:body.toString()});
   if(!r.ok) throw new Error("HTTP "+r.status);
 }
@@ -459,7 +491,7 @@ function render(fresh){
   document.getElementById("listTitle").textContent = view==="ready"?"Approved — ready to print":"Printed history";
   const recs=visible(), list=document.getElementById("list");
   if(!recs.length){
-    list.innerHTML=`<div class="empty"><div class="ico">${view==="ready"?"✓":"🔎"}</div><b>${view==="ready"?"All caught up":"No matches"}</b><div>${view==="ready"?"Nothing waiting to print right now.":"No printed certs match your search."}</div></div>`;
+    list.innerHTML=`<div class="empty"><div class="ico">${view==="ready"?"⏳":"🔎"}</div><b>${view==="ready"?"Waiting for approvals":"No matches"}</b><div>${view==="ready"?"A cert appears here the moment a packet is approved.":"No printed certs match your search."}</div></div>`;
   }else{
     list.innerHTML="";
     recs.forEach(rec=>{
@@ -506,13 +538,31 @@ function scaleToFit(stage,sticker){
   const s=w>avail?avail/w:1;
   sticker.style.transformOrigin="center"; sticker.style.transform=`scale(${s})`;
 }
-// One clean sticker face (the physical label is a 2-up wrap; the template handles
-// that — we don't duplicate the data on screen).
+// Normalized field set used by both the preview and the print layout.
+function fields(rec){
+  return {
+    part:(rec.partNumber||"").trim(), po:(rec.poNumber||"").trim(),
+    material:(rec.material||"").trim(), spec:(rec.spec||"").trim(), size:(rec.size||"").trim(),
+    heat:(rec.heat||"").trim(), qty:(rec.quantity||"").trim(),
+  };
+}
+// One clean sticker with separated info zones (ID · material · heat/qty).
+// The physical label is a 2-up wrap; the DYMO template handles that — we don't
+// duplicate the data on screen.
 function stickerHtml(rec,big){
-  const ln=lines(rec);
-  return `<div class="sticker${big?" big":""}"><div class="face">`+
-    `<div class="sl">${esc(ln[0]||"")}</div><div class="sl dim">${esc(ln[1]||"")}</div><div class="sl">${esc(ln[2]||"")}</div>`+
-    `</div></div>`;
+  const f=fields(rec);
+  const matLine=[f.material,f.spec].filter(Boolean).join("  ·  ");
+  return `<div class="sticker${big?" big":""}">`+
+    `<div class="srow"><span class="big">${esc(f.part||"—")}</span>`+
+      `${f.po?`<span class="kv"><i>PO</i>${esc(f.po)}</span>`:""}</div>`+
+    `${(matLine||f.size)?`<div class="sdiv"></div>`:""}`+
+    `${matLine?`<div class="smat">${esc(matLine)}</div>`:""}`+
+    `${f.size?`<div class="ssize">${esc(f.size)}</div>`:""}`+
+    `${(f.heat||f.qty)?`<div class="sdiv"></div>`:""}`+
+    `${(f.heat||f.qty)?`<div class="srow">`+
+      `${f.heat?`<span class="kv"><i>Heat</i>${esc(f.heat)}</span>`:"<span></span>"}`+
+      `${f.qty?`<span class="kv"><i>Qty</i>${esc(f.qty)}</span>`:""}</div>`:""}`+
+    `</div>`;
 }
 function showPreview(rec){
   const stage=document.getElementById("stage");
