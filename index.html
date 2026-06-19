@@ -3,431 +3,506 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Cert Label Station — MRG</title>
+<title>Cert Label Station — MRG Tool &amp; Die</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap">
 <style>
-  :root{
-    --bg:#0f1216; --panel:#171c23; --panel2:#1d242d; --line:#2a333d;
-    --ink:#e8edf2; --muted:#93a1b0; --accent:#3b82f6; --accent-2:#2563eb;
-    --good:#22c55e; --good-bg:#0f2a1a; --warn:#f59e0b; --chip:#222c36;
-    --sel:#13355f; --sel-line:#3b82f6;
-  }
-  *{box-sizing:border-box}
-  html,body{margin:0;height:100%}
-  body{
-    background:var(--bg); color:var(--ink);
-    font:15px/1.45 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
-    display:flex; flex-direction:column; height:100vh; overflow:hidden;
-  }
-  header{
-    display:flex; align-items:center; gap:14px; padding:12px 18px;
-    background:var(--panel); border-bottom:1px solid var(--line); flex:none;
-  }
-  .brand{font-weight:800; letter-spacing:.3px; font-size:17px}
-  .brand small{font-weight:600; color:var(--muted); margin-left:8px; font-size:12px}
-  .dymo-status{margin-left:auto; display:flex; align-items:center; gap:10px; font-size:13px}
-  .dot{width:9px;height:9px;border-radius:50%;background:#555;box-shadow:0 0 0 3px #ffffff10}
-  .dot.ok{background:var(--good)} .dot.bad{background:#ef4444}
-  select.printer{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:13px}
+:root{
+  --f:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  /* MRG brand */
+  --primary:#1B4FA8; --primary-dark:#153D84; --primary-soft:#EBF0FA; --accent:#0D2B5E;
+  /* surfaces */
+  --canvas:#F4F5F7; --canvas-mute:#FAFBFC; --surf:#ffffff;
+  --line:#E1E4E8; --line-strong:#C9CFD6;
+  /* text */
+  --ink:#1A1A2E; --ink2:#5F6B7A; --ink3:#8A95A2;
+  /* status */
+  --green:#16A34A; --green-soft:#E6F7EC; --red:#DC3545; --red-soft:#FCEEEF;
+  --amber:#F59E0B; --amber-soft:#FFF7E6;
+  /* shape */
+  --r-card:14px; --r-sec:16px; --r-btn:8px; --r-pill:999px;
+  --sh-sm:0 1px 3px rgba(16,24,40,.06); --sh-md:0 2px 8px rgba(16,24,40,.08);
+  --sh-lg:0 12px 30px rgba(16,24,40,.14); --sh-xl:0 24px 64px rgba(16,24,40,.22);
+  --ease:cubic-bezier(.22,1,.36,1);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  background:var(--canvas); color:var(--ink);
+  font-family:var(--f); font-size:14px; line-height:1.5;
+  display:flex; flex-direction:column; height:100vh; overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+button{font-family:var(--f)}
 
-  .tabs{display:flex; gap:4px; padding:10px 18px 0; background:var(--panel); flex:none}
-  .tab{padding:8px 16px; border-radius:9px 9px 0 0; cursor:pointer; color:var(--muted); font-weight:600; border:1px solid transparent; border-bottom:none}
-  .tab.active{background:var(--bg); color:var(--ink); border-color:var(--line)}
-  .tab .count{display:inline-block;margin-left:7px;background:var(--chip);color:var(--muted);border-radius:20px;padding:1px 8px;font-size:12px;font-weight:700}
-  .tab.active .count{background:var(--accent);color:#fff}
+/* ---------- Header ---------- */
+header{
+  display:flex; align-items:center; gap:16px; padding:0 24px; height:60px;
+  background:var(--surf); border-bottom:1px solid var(--line); flex:none; box-shadow:var(--sh-sm); z-index:30;
+}
+.logo{display:flex;align-items:center;gap:11px}
+.logo .mark{
+  width:38px;height:38px;border-radius:9px;display:grid;place-items:center;color:#fff;font-weight:900;font-size:14px;letter-spacing:.5px;
+  background:linear-gradient(135deg,var(--primary),var(--accent)); box-shadow:0 3px 10px rgba(27,79,168,.35);
+}
+.logo .txt b{font-size:15px;font-weight:800;letter-spacing:-.2px;display:block;line-height:1.1}
+.logo .txt span{font-size:11.5px;color:var(--ink3);font-weight:600}
 
-  .toolbar{display:flex; gap:10px; align-items:center; padding:12px 18px; flex:none}
-  .search{flex:1; display:flex; align-items:center; gap:8px; background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:8px 12px}
-  .search input{flex:1; background:transparent; border:none; outline:none; color:var(--ink); font-size:15px}
-  .btn{border:none; border-radius:10px; padding:10px 16px; font-weight:700; cursor:pointer; font-size:14px}
-  .btn:disabled{opacity:.45; cursor:not-allowed}
-  .btn-ghost{background:var(--panel2); color:var(--ink); border:1px solid var(--line)}
-  .btn-print{background:var(--accent); color:#fff; min-width:170px}
-  .btn-print:not(:disabled):hover{background:var(--accent-2)}
+.dymo-pill{
+  margin-left:auto; display:flex; align-items:center; gap:9px; padding:7px 12px; border-radius:var(--r-pill);
+  background:var(--canvas-mute); border:1px solid var(--line); cursor:pointer; transition:var(--ease) .18s; font-weight:600; font-size:13px;
+}
+.dymo-pill:hover{border-color:var(--line-strong);box-shadow:var(--sh-sm)}
+.dymo-pill .dot{width:9px;height:9px;border-radius:50%;background:var(--ink3);box-shadow:0 0 0 3px rgba(0,0,0,.04)}
+.dymo-pill.ok{background:var(--green-soft);border-color:#bfe6cd}
+.dymo-pill.ok .dot{background:var(--green);box-shadow:0 0 0 3px rgba(22,163,74,.14)}
+.dymo-pill.bad{background:var(--red-soft);border-color:#f3c9ce}
+.dymo-pill.bad .dot{background:var(--red);box-shadow:0 0 0 3px rgba(220,53,69,.14)}
+.dymo-pill select{border:none;background:transparent;font:inherit;color:var(--ink);cursor:pointer;outline:none;max-width:170px}
 
-  main{flex:1; display:grid; grid-template-columns:1fr 360px; gap:0; min-height:0}
-  .list{overflow:auto; padding:0 18px 18px}
-  .list-head{display:flex;align-items:center;gap:12px;color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;padding:6px 14px}
-  .row{
-    display:flex; align-items:center; gap:14px; padding:12px 14px; border:1px solid var(--line);
-    border-radius:12px; background:var(--panel); margin-bottom:8px; cursor:pointer; transition:.08s;
-  }
-  .row:hover{border-color:#3a4654}
-  .row.sel{background:var(--sel); border-color:var(--sel-line)}
-  .row .chk{width:22px;height:22px;border-radius:6px;border:2px solid #46535f;flex:none;display:grid;place-items:center;font-size:14px;color:#fff}
-  .row.sel .chk{background:var(--accent);border-color:var(--accent)}
-  .row .main{flex:1;min-width:0}
-  .row .l1{font-weight:700}
-  .row .l2{color:var(--muted);font-size:13.5px}
-  .row .meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
-  .chipx{font-size:11.5px;background:var(--chip);color:#aebccb;border-radius:6px;padding:2px 7px;font-weight:600}
-  .chipx.heat{background:#2a1f33;color:#d8b4fe}
-  .chipx.po{background:#0f2436;color:#7dd3fc}
-  .row .when{color:var(--muted);font-size:12px;white-space:nowrap}
-  .row .printed-tag{font-size:11px;color:var(--good);font-weight:700}
+/* ---------- Sub bar: tabs + search ---------- */
+.subbar{display:flex;align-items:center;gap:14px;padding:14px 24px 10px;background:var(--canvas);flex:none}
+.tabs{display:flex;gap:6px;background:var(--surf);padding:5px;border-radius:var(--r-pill);border:1px solid var(--line);box-shadow:var(--sh-sm)}
+.tab{display:flex;align-items:center;gap:8px;padding:8px 18px;border-radius:var(--r-pill);border:none;background:transparent;color:var(--ink2);font-weight:600;font-size:13.5px;cursor:pointer;transition:var(--ease) .18s}
+.tab:hover{color:var(--ink)}
+.tab.active{background:var(--primary);color:#fff;box-shadow:0 3px 9px rgba(27,79,168,.3)}
+.tab .count{background:rgba(0,0,0,.07);color:inherit;border-radius:var(--r-pill);padding:1px 9px;font-size:12px;font-weight:700;min-width:22px;text-align:center}
+.tab.active .count{background:rgba(255,255,255,.25)}
+.tab.live .count{background:var(--green);color:#fff}
+.tab.active.live .count{background:rgba(255,255,255,.3)}
 
-  aside{border-left:1px solid var(--line); background:var(--panel2); padding:18px; overflow:auto; display:flex; flex-direction:column; gap:14px}
-  aside h3{margin:0;font-size:12px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted)}
-  /* Sticker preview — mirrors the physical 2-up wrap tag */
-  .sticker-wrap{background:#fff;border-radius:8px;padding:10px;display:flex;justify-content:center}
-  .sticker{display:flex;color:#000;font-family:"Arial Narrow",Arial,sans-serif}
-  .sticker .face{padding:10px 14px;width:185px}
-  .sticker .perf{border-left:2px dashed #999;margin:6px 0}
-  .sticker .sl{font-size:13px;font-weight:700;line-height:1.5;white-space:nowrap;overflow:hidden}
-  .sticker .sl.dim{font-weight:600}
-  .empty{color:var(--muted);text-align:center;padding:60px 20px}
-  .empty .big{font-size:40px;margin-bottom:8px}
-  .summary{font-size:13px;color:var(--muted)}
-  .summary b{color:var(--ink)}
-  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#111820;border:1px solid var(--line);padding:12px 18px;border-radius:12px;box-shadow:0 10px 30px #0008;font-weight:600;opacity:0;transition:.2s;pointer-events:none}
-  .toast.show{opacity:1}
-  .toast.err{border-color:#ef4444}
-  .toast.ok{border-color:var(--good)}
-  kbd{background:#0c1014;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:11px;color:var(--muted)}
+.search{flex:1;max-width:520px;display:flex;align-items:center;gap:9px;background:var(--surf);border:1px solid var(--line);border-radius:var(--r-pill);padding:9px 16px;box-shadow:var(--sh-sm);transition:var(--ease) .18s}
+.search:focus-within{border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-soft)}
+.search svg{flex:none;color:var(--ink3)}
+.search input{flex:1;border:none;outline:none;background:transparent;font:inherit;color:var(--ink)}
+.live-tick{margin-left:auto;display:flex;align-items:center;gap:7px;color:var(--ink3);font-size:12px;font-weight:600}
+.live-tick .pulse{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(22,163,74,.5)}70%{box-shadow:0 0 0 7px rgba(22,163,74,0)}100%{box-shadow:0 0 0 0 rgba(22,163,74,0)}}
+
+/* ---------- Layout ---------- */
+main{flex:1;display:grid;grid-template-columns:1fr 380px;gap:18px;min-height:0;padding:4px 24px 20px}
+.list-col{display:flex;flex-direction:column;min-height:0}
+.list-head{display:flex;align-items:center;gap:12px;padding:6px 8px 10px;color:var(--ink3);font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase}
+.list-head .selall{margin-left:auto;display:flex;align-items:center;gap:7px;cursor:pointer;color:var(--primary);text-transform:none;letter-spacing:0;font-size:12.5px;font-weight:700}
+.list{overflow:auto;padding:2px 4px 8px;display:flex;flex-direction:column;gap:9px}
+
+/* ---------- Rows ---------- */
+.row{
+  display:flex;align-items:center;gap:15px;padding:14px 16px;border:1px solid var(--line);
+  border-radius:var(--r-card);background:var(--surf);cursor:pointer;transition:var(--ease) .2s;position:relative;box-shadow:var(--sh-sm)
+}
+.row:hover{border-color:#b9d0f0;box-shadow:var(--sh-md);transform:translateY(-2px)}
+.row.sel{border-color:var(--primary);background:linear-gradient(0deg,var(--primary-soft),var(--surf))}
+.row.fresh{animation:freshIn .6s var(--ease)}
+@keyframes freshIn{0%{background:var(--green-soft);transform:scale(.99)}100%{background:var(--surf)}}
+.row .box{
+  width:26px;height:26px;border-radius:8px;border:2px solid var(--line-strong);flex:none;display:grid;place-items:center;
+  color:#fff;font-size:15px;transition:var(--ease) .15s;background:var(--surf)
+}
+.row:hover .box{border-color:var(--primary)}
+.row.sel .box{background:var(--primary);border-color:var(--primary);box-shadow:0 2px 6px rgba(27,79,168,.35)}
+.row .body{flex:1;min-width:0}
+.row .l1{font-weight:700;font-size:15px;color:var(--ink);letter-spacing:-.1px}
+.row .l2{color:var(--ink2);font-size:13px;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
+.pill{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:var(--r-pill);font-size:11px;font-weight:700;background:var(--canvas-mute);color:var(--ink2);border:1px solid var(--line)}
+.pill.po{background:var(--primary-soft);color:var(--primary);border-color:#cdddf5}
+.pill.ht{background:#F3EEFB;color:#7c3aed;border-color:#e3d9f7}
+.pill.qty{background:var(--canvas-mute);color:var(--ink2)}
+.pill.sup{background:transparent;border-color:transparent;color:var(--ink3);font-weight:600}
+.row .right{display:flex;flex-direction:column;align-items:flex-end;gap:7px;flex:none}
+.row .when{color:var(--ink3);font-size:12px;font-weight:600;white-space:nowrap}
+.row .rowbtn{opacity:0;border:1px solid var(--line);background:var(--surf);color:var(--ink2);border-radius:var(--r-btn);padding:5px 11px;font-size:12px;font-weight:700;cursor:pointer;transition:var(--ease) .15s;white-space:nowrap}
+.row:hover .rowbtn{opacity:1}
+.row .rowbtn:hover{border-color:var(--primary);color:var(--primary);background:var(--primary-soft)}
+.printed-badge{display:inline-flex;align-items:center;gap:5px;color:var(--green);font-size:12px;font-weight:700}
+
+/* ---------- Side panel ---------- */
+aside{display:flex;flex-direction:column;gap:14px;min-height:0;overflow:auto;padding-bottom:6px}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:var(--r-sec);box-shadow:var(--sh-sm);overflow:hidden}
+.card .hd{display:flex;align-items:center;gap:8px;padding:13px 16px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,var(--canvas-mute),transparent);font-size:12px;font-weight:700;color:var(--ink2);text-transform:uppercase;letter-spacing:.05em}
+.card .bd{padding:16px}
+
+/* sticker preview */
+.sticker-stage{background:#eef0f3;border-radius:10px;padding:16px;display:flex;justify-content:center;cursor:zoom-in;position:relative;overflow:hidden}
+.sticker-stage:hover{background:#e7eaee}
+.sticker-stage .zoom-hint{position:absolute;top:8px;right:10px;font-size:10.5px;color:var(--ink3);font-weight:700;text-transform:uppercase;letter-spacing:.04em;opacity:0;transition:.15s}
+.sticker-stage:hover .zoom-hint{opacity:1}
+.sticker{display:flex;background:#fff;border-radius:5px;box-shadow:0 2px 8px rgba(0,0,0,.14);color:#000;font-family:"Arial Narrow",Arial,sans-serif}
+.sticker .face{padding:9px 13px;min-width:150px}
+.sticker .perf{border-left:2px dashed #b6b6b6;margin:7px 0}
+.sticker .sl{font-size:12.5px;font-weight:800;line-height:1.55;white-space:nowrap}
+.sticker .sl.dim{font-weight:600}
+.sticker.big .face{min-width:320px;padding:22px 30px}
+.sticker.big .sl{font-size:27px;line-height:1.5}
+
+.print-status{display:flex;align-items:center;gap:9px;padding:11px 14px;border-radius:10px;font-weight:600;font-size:13px;cursor:pointer;transition:var(--ease) .15s}
+.print-status.ok{background:var(--green-soft);color:#0f7a37;border:1px solid #bfe6cd}
+.print-status.bad{background:var(--red-soft);color:#a3232f;border:1px solid #f3c9ce}
+.print-status .dot{width:9px;height:9px;border-radius:50%;flex:none}
+.print-status.ok .dot{background:var(--green)} .print-status.bad .dot{background:var(--red)}
+.print-status .arr{margin-left:auto;font-size:12px;opacity:.7}
+
+.howto{color:var(--ink2);font-size:12.5px;line-height:1.65}
+.howto b{color:var(--ink)}
+kbd{background:var(--canvas-mute);border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:1px 6px;font-size:11px;color:var(--ink2);font-family:var(--f);font-weight:700}
+
+/* ---------- Sticky action bar ---------- */
+.actionbar{
+  position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(140%);
+  display:flex;align-items:center;gap:16px;padding:12px 14px 12px 22px;background:var(--surf);
+  border:1px solid var(--line);border-radius:var(--r-pill);box-shadow:var(--sh-xl);z-index:40;transition:var(--ease) .28s
+}
+.actionbar.show{transform:translateX(-50%) translateY(0)}
+.actionbar .sum{font-weight:700;font-size:14px}
+.actionbar .sum span{color:var(--ink3);font-weight:600}
+.actionbar .clear{background:none;border:none;color:var(--ink3);font-weight:700;cursor:pointer;font-size:13px}
+.actionbar .clear:hover{color:var(--ink)}
+.btn-print{border:none;border-radius:var(--r-pill);padding:11px 24px;font-weight:800;font-size:14px;cursor:pointer;background:var(--primary);color:#fff;box-shadow:0 4px 12px rgba(27,79,168,.4);transition:var(--ease) .15s;display:flex;align-items:center;gap:8px}
+.btn-print:hover:not(:disabled){background:var(--primary-dark);transform:translateY(-1px)}
+.btn-print:disabled{opacity:.5;cursor:not-allowed;box-shadow:none}
+
+/* ---------- Empty ---------- */
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:var(--ink3);padding:70px 20px;gap:8px}
+.empty .ico{width:56px;height:56px;border-radius:50%;background:var(--canvas-mute);display:grid;place-items:center;font-size:26px;border:1px solid var(--line)}
+.empty b{color:var(--ink2);font-size:15px}
+
+/* ---------- Modal ---------- */
+.overlay{position:fixed;inset:0;background:rgba(16,24,40,.5);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;z-index:60;padding:24px}
+.overlay.show{display:flex;animation:fade .2s}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.modal{background:var(--surf);border-radius:20px;box-shadow:var(--sh-xl);max-width:680px;width:100%;max-height:90vh;overflow:auto;animation:pop .25s var(--ease)}
+@keyframes pop{from{transform:scale(.95) translateY(10px);opacity:0}to{transform:none;opacity:1}}
+.modal .mh{display:flex;align-items:center;gap:12px;padding:18px 22px;border-bottom:1px solid var(--line)}
+.modal .mh b{font-size:16px;font-weight:800}
+.modal .mh .x{margin-left:auto;border:none;background:var(--canvas-mute);width:34px;height:34px;border-radius:9px;cursor:pointer;font-size:18px;color:var(--ink2)}
+.modal .mh .x:hover{background:var(--line)}
+.modal .mb{padding:24px}
+.detail{display:grid;grid-template-columns:auto 1fr;gap:10px 18px;margin-top:22px;font-size:14px}
+.detail dt{color:var(--ink3);font-weight:600}
+.detail dd{margin:0;font-weight:700;color:var(--ink)}
+.modal .mf{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--line);background:var(--canvas-mute)}
+.btn-ghost{flex:none;border:1px solid var(--line);background:var(--surf);color:var(--ink2);border-radius:var(--r-btn);padding:10px 18px;font-weight:700;cursor:pointer}
+.btn-ghost:hover{background:var(--canvas-mute);border-color:var(--line-strong)}
+.modal .mf .grow{flex:1}
+
+/* ---------- Toast ---------- */
+.toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;padding:13px 20px;border-radius:12px;box-shadow:var(--sh-xl);font-weight:600;opacity:0;transition:var(--ease) .25s;pointer-events:none;z-index:70;display:flex;align-items:center;gap:10px;max-width:520px;text-align:center}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.ok{background:#0f7a37} .toast.err{background:#a3232f}
+
+@media(max-width:980px){main{grid-template-columns:1fr}aside{display:none}}
 </style>
 </head>
 <body>
+
 <header>
-  <span class="brand">Cert Label Station <small>MRG Tool &amp; Die</small></span>
-  <div class="dymo-status">
-    <span class="dot" id="dymoDot"></span>
+  <div class="logo">
+    <div class="mark">MRG</div>
+    <div class="txt"><b>Cert Label Station</b><span>MRG Tool &amp; Die</span></div>
+  </div>
+  <div class="dymo-pill" id="dymoPill" title="Click to re-check / allow DYMO access">
+    <span class="dot"></span>
     <span id="dymoText">Checking DYMO…</span>
-    <select class="printer" id="printerSel" title="DYMO printer on this computer"></select>
+    <select id="printerSel" onclick="event.stopPropagation()" style="display:none"></select>
   </div>
 </header>
 
-<div class="tabs">
-  <div class="tab active" data-view="ready">Ready to Print <span class="count" id="cReady">0</span></div>
-  <div class="tab" data-view="all">All Certs <span class="count" id="cAll">0</span></div>
-</div>
-
-<div class="toolbar">
+<div class="subbar">
+  <div class="tabs">
+    <button class="tab live active" data-view="ready">Ready to Print <span class="count" id="cReady">0</span></button>
+    <button class="tab" data-view="history">History <span class="count" id="cHist">0</span></button>
+  </div>
   <label class="search">
-    🔎 <input id="q" placeholder="Search PO, heat #, part, material…  (type to filter)" />
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+    <input id="q" placeholder="Search PO, heat #, part, material, supplier…" />
   </label>
-  <button class="btn btn-ghost" id="selAll">Select all shown</button>
-  <button class="btn btn-print" id="printBtn" disabled>Print selected</button>
+  <div class="live-tick"><span class="pulse"></span> <span id="liveLabel">Live · syncing approvals</span></div>
 </div>
 
 <main>
-  <div class="list" id="list"></div>
+  <div class="list-col">
+    <div class="list-head">
+      <span id="listTitle">Approved — ready to print</span>
+      <span class="selall" id="selAll">◻ Select all shown</span>
+    </div>
+    <div class="list" id="list"></div>
+  </div>
+
   <aside>
-    <h3>Sticker preview</h3>
-    <div class="sticker-wrap" id="preview"></div>
-    <h3>Selection</h3>
-    <div class="summary" id="selSummary">Nothing selected.</div>
-    <div style="margin-top:auto;color:var(--muted);font-size:12px;line-height:1.6">
-      <b style="color:var(--ink)">How it works</b><br>
-      Troy approves a cert packet → it appears here. Pick the ones to label,
-      hit <kbd>Print selected</kbd>, and they print on <b>this computer's</b> DYMO.
-      Printed certs drop off the "Ready" list automatically.
+    <div class="card">
+      <div class="hd">Sticker preview</div>
+      <div class="bd" style="display:flex;flex-direction:column;gap:14px">
+        <div class="sticker-stage" id="stage" title="Click to enlarge">
+          <span class="zoom-hint">⤢ Click to enlarge</span>
+          <div id="preview"></div>
+        </div>
+        <div class="print-status" id="printStatus" title="DYMO connection on this computer"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="hd">How it works</div>
+      <div class="bd howto">
+        A cert packet is approved → it appears in <b>Ready to Print</b> instantly. Pick the
+        ones you need, hit <kbd>Print</kbd>, and they print on <b>this computer's</b> DYMO.
+        Printed certs move to <b>History</b>, where you can search and reprint any past label.
+      </div>
     </div>
   </aside>
 </main>
 
+<div class="actionbar" id="actionbar">
+  <div class="sum" id="actionSum"></div>
+  <button class="clear" id="clearSel">Clear</button>
+  <button class="btn-print" id="printBtn">🖨 Print stickers</button>
+</div>
+
+<!-- Big sticker / detail modal -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <div class="mh"><b id="modalTitle">Cert label</b><button class="x" id="modalX">✕</button></div>
+    <div class="mb">
+      <div class="sticker-stage" style="cursor:default;background:#eef0f3">
+        <div id="modalSticker"></div>
+      </div>
+      <dl class="detail" id="modalDetail"></dl>
+    </div>
+    <div class="mf">
+      <span class="grow"></span>
+      <button class="btn-ghost" id="modalClose2">Close</button>
+      <button class="btn-print" id="modalPrint">🖨 Print this sticker</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
-/* =========================================================================
-   CONFIG
-   ========================================================================= */
+/* ========================= CONFIG ========================= */
 const CONFIG = {
-  // Backend that serves approved cert labels. When unreachable, the app falls
-  // back to embedded demo data so the station still works / can be demoed.
-  apiBase: "",                                   // e.g. "https://mrg-purchasing-fn.azurewebsites.net"
-  labelsPath: "/api/labels",                     // GET ?status=unprinted|all&q=&top=
-  markPrintedPath: "/api/labels/printed",        // POST {ids:[...]}
+  apiBase: "",                                  // e.g. https://mrg-purchasing-fn.azurewebsites.net
+  labelsPath: "/api/labels",
+  markPrintedPath: "/api/labels/printed",
   dymoBase: "https://127.0.0.1:41951/DYMO/DLS/Printing",
-  // The sticker layout. {tokens} pulled from each label record. Empty pieces collapse.
-  format: {
-    line1: "{partNumber} PO:{poNumber}",
-    line2: "{material} {spec} {size}",
-    line3: "HT#{heat} QTY {quantity}",
-  },
-  copiesPerCert: 1,        // physical tag is 2-up; DYMO label is defined 2-up, so 1 print = 1 pair
+  format:{ line1:"{partNumber} PO:{poNumber}", line2:"{material} {spec} {size}", line3:"HT#{heat} QTY {quantity}" },
+  copiesPerCert:1,
+  pollMs:15000,
 };
 
-/* =========================================================================
-   DEMO DATA — the two real packets from the shop + a few more.
-   Replaced live by /api/labels when the backend is reachable.
-   ========================================================================= */
+/* ========================= DEMO DATA ========================= */
 const DEMO = [
-  { id:"d1", partNumber:"72302/-1", poNumber:"108799", material:"303 SS", spec:"AMS 5640", size:".5X1.5X12'", heat:"67535042", quantity:"4", supplier:"Jorgensen Steel & Aluminum", lane:"Material", filedAt:"2026-06-19T13:05:00Z", printed:false },
-  { id:"d2", partNumber:"", poNumber:"108665", material:"316/316L HRAP BAR", spec:"ASTM A479", size:"0.750 x 2.000 x 12.000", heat:"297407", quantity:"1", supplier:"Jorgensen Steel & Aluminum", lane:"Material", filedAt:"2026-06-19T12:38:00Z", printed:false },
-  { id:"d3", partNumber:"71880/-2", poNumber:"108575", material:"4140 HT", spec:"AMS 6382", size:"1.250 RD x 12'", heat:"H44219", quantity:"6", supplier:"Castle Metals", lane:"Material", filedAt:"2026-06-19T11:20:00Z", printed:false },
-  { id:"d4", partNumber:"72145", poNumber:"108540", material:"6061-T6", spec:"AMS 4117", size:"2.000 x 2.000 x 12'", heat:"4471102", quantity:"2", supplier:"TW Metals", lane:"Material", filedAt:"2026-06-18T15:02:00Z", printed:true },
-  { id:"d5", partNumber:"72290/-1", poNumber:"108612", material:"17-4 PH", spec:"AMS 5643", size:"1.000 RD x 12'", heat:"V90233", quantity:"3", supplier:"Jorgensen Steel & Aluminum", lane:"Material", filedAt:"2026-06-18T09:41:00Z", printed:true },
+  { id:"d1", partNumber:"72302/-1", poNumber:"108799", material:"303 SS", spec:"AMS 5640", size:".5X1.5X12'", heat:"67535042", quantity:"4", supplier:"Jorgensen Steel & Aluminum", lane:"Material", approvedBy:"Troy", filedAt:"2026-06-19T13:05:00Z", printed:false },
+  { id:"d2", partNumber:"", poNumber:"108665", material:"316/316L HRAP BAR", spec:"ASTM A479", size:"0.750 x 2.000 x 12.000", heat:"297407", quantity:"1", supplier:"Jorgensen Steel & Aluminum", lane:"Material", approvedBy:"Troy", filedAt:"2026-06-19T12:38:00Z", printed:false },
+  { id:"d3", partNumber:"71880/-2", poNumber:"108575", material:"4140 HT", spec:"AMS 6382", size:"1.250 RD x 12'", heat:"H44219", quantity:"6", supplier:"Castle Metals", lane:"Material", approvedBy:"Mary", filedAt:"2026-06-19T11:20:00Z", printed:false },
+  { id:"d4", partNumber:"72145", poNumber:"108540", material:"6061-T6", spec:"AMS 4117", size:"2.000 x 2.000 x 12'", heat:"4471102", quantity:"2", supplier:"TW Metals", lane:"Material", approvedBy:"Troy", filedAt:"2026-06-18T15:02:00Z", printed:true, printedAt:"2026-06-18T15:40:00Z" },
+  { id:"d5", partNumber:"72290/-1", poNumber:"108612", material:"17-4 PH", spec:"AMS 5643", size:"1.000 RD x 12'", heat:"V90233", quantity:"3", supplier:"Jorgensen Steel & Aluminum", lane:"Material", approvedBy:"Mary", filedAt:"2026-06-18T09:41:00Z", printed:true, printedAt:"2026-06-18T10:05:00Z" },
 ];
 
-/* =========================================================================
-   STATE
-   ========================================================================= */
-let RECORDS = [];
-let view = "ready";          // "ready" | "all"
-let selected = new Set();
-let printerName = null;
+/* ========================= STATE ========================= */
+let RECORDS=[], view="ready", selected=new Set(), printerName=null, dymoOk=false, modalRec=null, knownIds=new Set();
 
-/* =========================================================================
-   DATA LAYER
-   ========================================================================= */
-async function loadRecords(){
-  const url = CONFIG.apiBase + CONFIG.labelsPath + "?status=all&top=500";
+/* ========================= DATA ========================= */
+async function loadRecords(initial){
+  let recs;
   try{
-    const r = await fetch(url, { headers:{ "Accept":"application/json" } });
-    if(!r.ok) throw new Error("HTTP "+r.status);
-    RECORDS = await r.json();
+    const r = await fetch(CONFIG.apiBase+CONFIG.labelsPath+"?status=all&top=500",{headers:{Accept:"application/json"}});
+    if(!r.ok) throw 0; recs = await r.json();
+    document.getElementById("liveLabel").textContent="Live · connected";
   }catch(e){
-    // Backend not wired yet / offline → demo data so the station still runs.
-    RECORDS = DEMO.slice();
+    recs = DEMO.slice();
+    document.getElementById("liveLabel").textContent="Demo data (backend not wired)";
   }
-  render();
+  const fresh=new Set();
+  if(!initial) recs.forEach(r=>{ if(!knownIds.has(r.id) && !r.printed) fresh.add(r.id); });
+  recs.forEach(r=>knownIds.add(r.id));
+  RECORDS=recs;
+  render(fresh);
+  if(fresh.size) toast(`${fresh.size} new cert${fresh.size>1?"s":""} approved`,"ok");
 }
-
 async function markPrinted(ids){
-  // Optimistic local update
-  ids.forEach(id=>{ const rec = RECORDS.find(r=>r.id===id); if(rec) rec.printed = true; });
-  render();
-  try{
-    await fetch(CONFIG.apiBase + CONFIG.markPrintedPath, {
-      method:"POST", headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({ ids }),
-    });
-  }catch(e){ /* demo / offline — local state already updated */ }
+  const now=new Date().toISOString();
+  ids.forEach(id=>{const r=RECORDS.find(x=>x.id===id);if(r){r.printed=true;r.printedAt=now;}});
+  try{ await fetch(CONFIG.apiBase+CONFIG.markPrintedPath,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ids})}); }catch(e){}
 }
 
-/* =========================================================================
-   FORMATTING — build the 3 sticker lines from a record
-   ========================================================================= */
-function fillTemplate(tpl, rec){
-  return tpl.replace(/\{(\w+)\}/g, (_,k)=> (rec[k]==null?"":String(rec[k]).trim()))
-            .replace(/\s{2,}/g," ")          // collapse gaps from empty tokens
-            .replace(/PO:\s*$/,"")            // drop dangling "PO:" if no PO
-            .replace(/HT#\s*/,"HT#")
-            .trim();
-}
-function stickerLines(rec){
-  return [CONFIG.format.line1, CONFIG.format.line2, CONFIG.format.line3]
-    .map(t=>fillTemplate(t, rec)).filter(Boolean);
-}
+/* ========================= FORMAT ========================= */
+function fill(tpl,rec){return tpl.replace(/\{(\w+)\}/g,(_,k)=>(rec[k]==null?"":String(rec[k]).trim())).replace(/\s{2,}/g," ").replace(/PO:\s*$/,"").trim();}
+function lines(rec){return [CONFIG.format.line1,CONFIG.format.line2,CONFIG.format.line3].map(t=>fill(t,rec)).filter(Boolean);}
 
-/* =========================================================================
-   DYMO — talk straight to the local web service (no SDK bundle needed)
-   ========================================================================= */
-async function dymoGet(path){
-  const r = await fetch(CONFIG.dymoBase + path, { method:"GET" });
-  return await r.text();
-}
+/* ========================= DYMO ========================= */
+async function dget(p){const r=await fetch(CONFIG.dymoBase+p);return await r.text();}
 async function checkDymo(){
-  const dot = document.getElementById("dymoDot");
-  const txt = document.getElementById("dymoText");
-  const sel = document.getElementById("printerSel");
+  const pill=document.getElementById("dymoPill"), txt=document.getElementById("dymoText"), sel=document.getElementById("printerSel");
   try{
-    const status = (await dymoGet("/StatusConnected")).trim();
-    const xml = await dymoGet("/GetPrinters");
-    const doc = new DOMParser().parseFromString(xml, "text/xml");
-    const printers = [...doc.querySelectorAll("LabelWriterPrinter, Printer")]
-      .map(p=>({
-        name: p.querySelector("Name")?.textContent?.trim(),
-        connected: (p.querySelector("IsConnected")?.textContent?.trim()||"True")==="True",
-      }))
-      .filter(p=>p.name);
-    sel.innerHTML = "";
+    await dget("/StatusConnected");
+    const xml=await dget("/GetPrinters");
+    const doc=new DOMParser().parseFromString(xml,"text/xml");
+    const printers=[...doc.querySelectorAll("LabelWriterPrinter, Printer")].map(p=>p.querySelector("Name")?.textContent?.trim()).filter(Boolean);
     if(printers.length){
-      printers.forEach(p=>{
-        const o=document.createElement("option"); o.value=p.name; o.textContent=p.name + (p.connected?"":" (offline)");
-        sel.appendChild(o);
-      });
-      printerName = printers[0].name;
-      dot.className="dot ok"; txt.textContent = printers.length+" DYMO ready";
+      sel.innerHTML=printers.map(n=>`<option>${esc(n)}</option>`).join(""); sel.style.display=printers.length>1?"inline":"none";
+      printerName=printers[0]; dymoOk=true;
+      pill.className="dymo-pill ok"; txt.textContent=printers.length>1?`${printers.length} DYMO ready`:"DYMO ready";
     }else{
-      const o=document.createElement("option"); o.textContent="No DYMO printer found"; sel.appendChild(o);
-      dot.className="dot bad"; txt.textContent="No printer";
-      printerName=null;
+      sel.style.display="none"; printerName=null; dymoOk=false;
+      pill.className="dymo-pill bad"; txt.textContent="No printer found";
     }
   }catch(e){
-    document.getElementById("dymoDot").className="dot bad";
-    document.getElementById("dymoText").textContent="DYMO service not running";
-    sel.innerHTML='<option>Install / start DYMO Connect</option>';
-    printerName=null;
+    sel.style.display="none"; printerName=null; dymoOk=false;
+    pill.className="dymo-pill bad"; txt.textContent="DYMO not connected";
   }
-  updatePrintBtn();
+  paintPrintStatus(); updateActionBar();
+}
+function paintPrintStatus(){
+  const el=document.getElementById("printStatus");
+  if(dymoOk){ el.className="print-status ok"; el.innerHTML=`<span class="dot"></span> Ready to print on <b style="margin:0 4px">${esc(printerName)}</b><span class="arr">on this PC</span>`; }
+  else{ el.className="print-status bad"; el.innerHTML=`<span class="dot"></span> DYMO not connected — <b style="margin:0 4px">click to allow</b><span class="arr">↻</span>`; }
+}
+// Clicking status re-attempts the connection. If the browser blocked localhost access,
+// re-fetching re-triggers the "allow" prompt; otherwise we guide the user.
+async function reconnectDymo(){
+  toast("Re-checking DYMO… allow access if your browser asks","");
+  await checkDymo();
+  if(!dymoOk) setTimeout(()=>toast("Blocked? Click the 🔒 / ⓘ icon by the address bar → allow this site to access devices, then click here again","err"),700);
 }
 
-// Build DYMO Label v8 XML for one sticker (3 lines, one text object).
-// NOTE: LabelType/size must match the physical label stock loaded in the shop.
-// Design the master once in DYMO Connect, paste its <DieCutLabel> here.
 function buildLabelXml(rec){
-  const lines = stickerLines(rec).map(s=>
-    `<String>${escapeXml(s)}</String><Attributes><Font Family="Arial" Size="9" Bold="True" Italic="False" Underline="False" Strikeout="False"/><ForeColor Alpha="255" Red="0" Green="0" Blue="0"/></Attributes>`
-  ).join('<LineTextSpan/>');
   return `<?xml version="1.0" encoding="utf-8"?>
 <DieCutLabel Version="8.0" Units="twips">
-  <PaperOrientation>Landscape</PaperOrientation>
-  <Id>LargeMultipurpose</Id>
-  <PaperName>30334 2-1/4 in x 1-1/4 in</PaperName>
+  <PaperOrientation>Landscape</PaperOrientation><Id>LargeMultipurpose</Id><PaperName>30334 2-1/4 in x 1-1/4 in</PaperName>
   <DrawCommands><RoundRectangle X="0" Y="0" Width="3240" Height="1800" Rx="180" Ry="180"/></DrawCommands>
-  <ObjectInfo>
-    <TextObject>
-      <Name>CERT</Name>
-      <ForeColor Alpha="255" Red="0" Green="0" Blue="0"/>
-      <BackColor Alpha="0" Red="255" Green="255" Blue="255"/>
-      <LinkedObjectName/><Rotation>Rotation0</Rotation><IsMirrored>False</IsMirrored><IsVariable>True</IsVariable>
-      <HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment>
-      <TextFitMode>ShrinkToFit</TextFitMode><UseFullFontHeight>True</UseFullFontHeight><Verticalized>False</Verticalized>
-      <StyledText><Element><String>${escapeXml(stickerLines(rec).join("\n"))}</String><Attributes><Font Family="Arial" Size="9" Bold="True"/><ForeColor Alpha="255" Red="0" Green="0" Blue="0"/></Attributes></Element></StyledText>
-    </TextObject>
-    <Bounds X="120" Y="100" Width="3000" Height="1600"/>
-  </ObjectInfo>
+  <ObjectInfo><TextObject><Name>CERT</Name><ForeColor Alpha="255" Red="0" Green="0" Blue="0"/><BackColor Alpha="0" Red="255" Green="255" Blue="255"/>
+    <LinkedObjectName/><Rotation>Rotation0</Rotation><IsMirrored>False</IsMirrored><IsVariable>True</IsVariable>
+    <HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><TextFitMode>ShrinkToFit</TextFitMode>
+    <UseFullFontHeight>True</UseFullFontHeight><Verticalized>False</Verticalized>
+    <StyledText><Element><String>${esc(lines(rec).join("\n"))}</String><Attributes><Font Family="Arial" Size="9" Bold="True"/><ForeColor Alpha="255" Red="0" Green="0" Blue="0"/></Attributes></Element></StyledText>
+  </TextObject><Bounds X="120" Y="100" Width="3000" Height="1600"/></ObjectInfo>
 </DieCutLabel>`;
 }
-function escapeXml(s){return String(s).replace(/[<>&'"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;',"'":'&apos;','"':'&quot;'}[c]));}
-
-async function dymoPrint(rec){
-  const body = new URLSearchParams();
-  body.set("printerName", printerName);
-  body.set("printParamsXml", `<LabelWriterPrintParams><Copies>${CONFIG.copiesPerCert}</Copies><PrintQuality>BarcodeAndGraphics</PrintQuality></LabelWriterPrintParams>`);
-  body.set("labelXml", buildLabelXml(rec));
-  body.set("labelSetXml", "");
-  const r = await fetch(CONFIG.dymoBase + "/PrintLabel", {
-    method:"POST",
-    headers:{ "Content-Type":"application/x-www-form-urlencoded" },
-    body: body.toString(),
-  });
-  if(!r.ok) throw new Error("Print failed: HTTP "+r.status);
+async function dymoPrintOne(rec){
+  const body=new URLSearchParams();
+  body.set("printerName",printerName);
+  body.set("printParamsXml",`<LabelWriterPrintParams><Copies>${CONFIG.copiesPerCert}</Copies><PrintQuality>BarcodeAndGraphics</PrintQuality></LabelWriterPrintParams>`);
+  body.set("labelXml",buildLabelXml(rec)); body.set("labelSetXml","");
+  const r=await fetch(CONFIG.dymoBase+"/PrintLabel",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:body.toString()});
+  if(!r.ok) throw new Error("HTTP "+r.status);
 }
-
-async function printSelected(){
-  if(!printerName){ toast("No DYMO printer on this computer.", "err"); return; }
-  const ids = [...selected];
-  const recs = ids.map(id=>RECORDS.find(r=>r.id===id)).filter(Boolean);
-  const btn = document.getElementById("printBtn");
-  btn.disabled = true; btn.textContent = "Printing…";
-  let ok=0, fail=0;
-  for(const rec of recs){
-    try{ await dymoPrint(rec); ok++; }
-    catch(e){ fail++; console.error(e); }
-  }
+async function printRecs(recs){
+  if(!dymoOk){ reconnectDymo(); return; }
+  let ok=0,fail=0;
+  for(const rec of recs){ try{await dymoPrintOne(rec);ok++;}catch(e){fail++;console.error(e);} }
   if(ok) await markPrinted(recs.slice(0,ok).map(r=>r.id));
-  selected.clear();
-  toast(`${ok} sticker${ok!==1?"s":""} sent to ${printerName}` + (fail?` · ${fail} failed`:""), fail?"err":"ok");
-  btn.textContent="Print selected";
-  render();
+  toast(`${ok} sticker${ok!==1?"s":""} sent to ${printerName}`+(fail?` · ${fail} failed`:""),fail?"err":"ok");
+  selected.clear(); render();
 }
 
-/* =========================================================================
-   RENDER
-   ========================================================================= */
-function fmtWhen(iso){
-  try{
-    const d = new Date(iso); const now=new Date();
-    const mins = Math.round((now-d)/60000);
-    if(mins<60) return mins+"m ago";
-    if(mins<1440) return Math.round(mins/60)+"h ago";
-    return d.toLocaleDateString(undefined,{month:"short",day:"numeric"});
-  }catch(e){ return ""; }
-}
-function visibleRecords(){
-  const q = document.getElementById("q").value.trim().toLowerCase();
-  let recs = RECORDS.slice().sort((a,b)=> new Date(b.filedAt)-new Date(a.filedAt));
-  if(view==="ready") recs = recs.filter(r=>!r.printed);
-  if(q){
-    recs = recs.filter(r=>[r.partNumber,r.poNumber,r.material,r.spec,r.size,r.heat,r.supplier]
-      .join(" ").toLowerCase().includes(q));
-  }
+/* ========================= RENDER ========================= */
+function whenTxt(iso){try{const d=new Date(iso),m=Math.round((Date.now()-d)/60000);if(m<1)return"just now";if(m<60)return m+"m ago";if(m<1440)return Math.round(m/60)+"h ago";return d.toLocaleDateString(undefined,{month:"short",day:"numeric"});}catch(e){return"";}}
+function visible(){
+  const q=document.getElementById("q").value.trim().toLowerCase();
+  let recs=RECORDS.slice().sort((a,b)=>new Date(view==="history"?(b.printedAt||b.filedAt):b.filedAt)-new Date(view==="history"?(a.printedAt||a.filedAt):a.filedAt));
+  recs = view==="ready"? recs.filter(r=>!r.printed) : recs.filter(r=>r.printed);
+  if(q) recs=recs.filter(r=>[r.partNumber,r.poNumber,r.material,r.spec,r.size,r.heat,r.supplier].join(" ").toLowerCase().includes(q));
   return recs;
 }
-function render(){
-  document.getElementById("cReady").textContent = RECORDS.filter(r=>!r.printed).length;
-  document.getElementById("cAll").textContent = RECORDS.length;
-  const recs = visibleRecords();
-  const list = document.getElementById("list");
+function render(fresh){
+  fresh=fresh||new Set();
+  document.getElementById("cReady").textContent=RECORDS.filter(r=>!r.printed).length;
+  document.getElementById("cHist").textContent=RECORDS.filter(r=>r.printed).length;
+  document.getElementById("listTitle").textContent = view==="ready"?"Approved — ready to print":"Printed history";
+  const recs=visible(), list=document.getElementById("list");
   if(!recs.length){
-    list.innerHTML = `<div class="empty"><div class="big">🎉</div>${view==="ready"?"All caught up — nothing waiting to print.":"No certs match your search."}</div>`;
+    list.innerHTML=`<div class="empty"><div class="ico">${view==="ready"?"✓":"🔎"}</div><b>${view==="ready"?"All caught up":"No matches"}</b><div>${view==="ready"?"Nothing waiting to print right now.":"No printed certs match your search."}</div></div>`;
   }else{
-    list.innerHTML = "";
+    list.innerHTML="";
     recs.forEach(rec=>{
-      const lines = stickerLines(rec);
-      const sel = selected.has(rec.id);
-      const div = document.createElement("div");
-      div.className = "row"+(sel?" sel":"");
-      div.innerHTML = `
-        <div class="chk">${sel?"✓":""}</div>
-        <div class="main">
-          <div class="l1">${esc(lines[0]||"(no part / PO)")}</div>
-          <div class="l2">${esc(lines[1]||"")}</div>
-          <div class="meta">
-            <span class="chipx po">PO ${esc(rec.poNumber||"—")}</span>
-            <span class="chipx heat">HT# ${esc(rec.heat||"—")}</span>
-            <span class="chipx">QTY ${esc(rec.quantity||"—")}</span>
-            <span class="chipx">${esc(rec.supplier||"")}</span>
-            ${rec.printed?'<span class="printed-tag">✓ printed</span>':''}
+      const ln=lines(rec), sel=selected.has(rec.id);
+      const d=document.createElement("div");
+      d.className="row"+(sel?" sel":"")+(fresh.has(rec.id)?" fresh":"");
+      d.innerHTML=`
+        <div class="box">${sel?"✓":""}</div>
+        <div class="body">
+          <div class="l1">${esc(ln[0]||"(no part / PO)")}</div>
+          <div class="l2">${esc(ln[1]||"")}</div>
+          <div class="tags">
+            <span class="pill po">PO ${esc(rec.poNumber||"—")}</span>
+            <span class="pill ht">HT# ${esc(rec.heat||"—")}</span>
+            <span class="pill qty">QTY ${esc(rec.quantity||"—")}</span>
+            <span class="pill sup">${esc(rec.supplier||"")}</span>
           </div>
         </div>
-        <div class="when">${fmtWhen(rec.filedAt)}</div>`;
-      div.onclick = ()=>{ toggle(rec.id); };
-      div.onmouseenter = ()=> showPreview(rec);
-      list.appendChild(div);
+        <div class="right">
+          ${rec.printed?`<span class="printed-badge">✓ printed ${whenTxt(rec.printedAt)}</span>`:`<span class="when">${whenTxt(rec.filedAt)}</span>`}
+          <button class="rowbtn" data-act="preview">${rec.printed?"Reprint":"Preview"}</button>
+        </div>`;
+      d.onclick=(e)=>{ if(e.target.dataset.act==="preview"){openModal(rec);return;} toggle(rec.id,rec); };
+      d.onmouseenter=()=>showPreview(rec);
+      list.appendChild(d);
     });
   }
-  updatePrintBtn();
-  updateSummary();
+  document.getElementById("selAll").innerHTML=(()=>{const v=visible();const all=v.length&&v.every(r=>selected.has(r.id));return (all?"☑":"◻")+" "+(all?"Clear selection":"Select all shown");})();
+  updateActionBar();
 }
-function toggle(id){
-  if(selected.has(id)) selected.delete(id); else selected.add(id);
-  const rec = RECORDS.find(r=>r.id===id); if(rec) showPreview(rec);
-  render();
+function toggle(id,rec){ selected.has(id)?selected.delete(id):selected.add(id); if(rec)showPreview(rec); render(); }
+function updateActionBar(){
+  const bar=document.getElementById("actionbar"), n=selected.size;
+  if(n){ bar.classList.add("show");
+    document.getElementById("actionSum").innerHTML=`<b>${n}</b> selected <span>· ${n*CONFIG.copiesPerCert} sticker${n*CONFIG.copiesPerCert!==1?"s":""}</span>`;
+    const b=document.getElementById("printBtn"); b.disabled=!dymoOk; b.textContent=dymoOk?`🖨 Print ${n} sticker${n!==1?"s":""}`:"🖨 DYMO not connected";
+  } else bar.classList.remove("show");
 }
-function updatePrintBtn(){
-  const btn = document.getElementById("printBtn");
-  btn.disabled = selected.size===0 || !printerName;
-  btn.textContent = selected.size ? `Print selected (${selected.size})` : "Print selected";
-}
-function updateSummary(){
-  const el = document.getElementById("selSummary");
-  if(!selected.size){ el.textContent="Nothing selected."; return; }
-  const recs = [...selected].map(id=>RECORDS.find(r=>r.id===id)).filter(Boolean);
-  el.innerHTML = `<b>${recs.length}</b> cert${recs.length!==1?"s":""} selected · `+
-    `${recs.length*CONFIG.copiesPerCert} sticker${recs.length*CONFIG.copiesPerCert!==1?"s":""} will print.`;
+// Shrink a rendered sticker so the (possibly long) lines fit the stage — mirrors the
+// LabelWriter's ShrinkToFit so the on-screen preview matches what actually prints.
+function scaleToFit(stage,sticker){
+  sticker.style.transform="none";
+  const avail=stage.clientWidth-32, w=sticker.scrollWidth;
+  const s=w>avail?avail/w:1;
+  sticker.style.transformOrigin="center"; sticker.style.transform=`scale(${s})`;
 }
 function showPreview(rec){
-  const lines = stickerLines(rec);
-  const face = `<div class="face">
-      <div class="sl">${esc(lines[0]||"")}</div>
-      <div class="sl dim">${esc(lines[1]||"")}</div>
-      <div class="sl">${esc(lines[2]||"")}</div>
-    </div>`;
-  // 2-up wrap tag — same data twice, perforation between
-  document.getElementById("preview").innerHTML =
-    `<div class="sticker">${face}<div class="perf"></div>${face}</div>`;
+  const ln=lines(rec);
+  const face=`<div class="face"><div class="sl">${esc(ln[0]||"")}</div><div class="sl dim">${esc(ln[1]||"")}</div><div class="sl">${esc(ln[2]||"")}</div></div>`;
+  const stage=document.getElementById("stage");
+  document.getElementById("preview").innerHTML=`<div class="sticker">${face}<div class="perf"></div>${face}</div>`;
+  requestAnimationFrame(()=>scaleToFit(stage,document.querySelector("#preview .sticker")));
+  stage.onclick=()=>openModal(rec);
 }
+function openModal(rec){
+  modalRec=rec; const ln=lines(rec);
+  const face=`<div class="face"><div class="sl">${esc(ln[0]||"")}</div><div class="sl dim">${esc(ln[1]||"")}</div><div class="sl">${esc(ln[2]||"")}</div></div>`;
+  document.getElementById("modalSticker").innerHTML=`<div class="sticker big">${face}<div class="perf"></div>${face}</div>`;
+  requestAnimationFrame(()=>scaleToFit(document.getElementById("modalSticker").parentElement,document.querySelector("#modalSticker .sticker")));
+  document.getElementById("modalTitle").textContent=(rec.partNumber||rec.poNumber||"Cert")+" — label";
+  const rows=[["PO #",rec.poNumber],["Part / Job",rec.partNumber],["Material",rec.material],["Spec",rec.spec],["Size",rec.size],["Heat #",rec.heat],["Quantity",rec.quantity],["Supplier",rec.supplier],["Approved by",rec.approvedBy],[rec.printed?"Printed":"Approved",whenTxt(rec.printed?rec.printedAt:rec.filedAt)]];
+  document.getElementById("modalDetail").innerHTML=rows.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v||"—")}</dd>`).join("");
+  const pb=document.getElementById("modalPrint"); pb.disabled=!dymoOk; pb.textContent=dymoOk?"🖨 Print this sticker":"DYMO not connected";
+  document.getElementById("overlay").classList.add("show");
+}
+function closeModal(){document.getElementById("overlay").classList.remove("show");modalRec=null;}
+
+/* ========================= UTIL ========================= */
 function esc(s){return String(s==null?"":s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));}
+function toast(m,k){const t=document.getElementById("toast");t.textContent=m;t.className="toast show "+(k||"");clearTimeout(t._t);t._t=setTimeout(()=>t.className="toast "+(k||""),3600);}
 
-function toast(msg,kind){
-  const t=document.getElementById("toast"); t.textContent=msg; t.className="toast show "+(kind||"");
-  clearTimeout(t._t); t._t=setTimeout(()=>t.className="toast",2600);
-}
+/* ========================= WIRE ========================= */
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));t.classList.add("active");view=t.dataset.view;render();});
+document.getElementById("q").addEventListener("input",()=>render());
+document.getElementById("selAll").onclick=()=>{const v=visible();const all=v.length&&v.every(r=>selected.has(r.id));v.forEach(r=>all?selected.delete(r.id):selected.add(r.id));render();};
+document.getElementById("clearSel").onclick=()=>{selected.clear();render();};
+document.getElementById("printBtn").onclick=()=>printRecs([...selected].map(id=>RECORDS.find(r=>r.id===id)).filter(Boolean));
+document.getElementById("dymoPill").onclick=reconnectDymo;
+document.getElementById("printStatus").onclick=reconnectDymo;
+document.getElementById("modalX").onclick=closeModal;
+document.getElementById("modalClose2").onclick=closeModal;
+document.getElementById("overlay").onclick=e=>{if(e.target.id==="overlay")closeModal();};
+document.getElementById("modalPrint").onclick=()=>{if(modalRec){printRecs([modalRec]);closeModal();}};
+document.getElementById("printerSel").onchange=e=>{printerName=e.target.value;paintPrintStatus();};
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeModal();});
 
-/* =========================================================================
-   WIRE UP
-   ========================================================================= */
-document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
-  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
-  t.classList.add("active"); view=t.dataset.view; render();
-});
-document.getElementById("q").addEventListener("input", render);
-document.getElementById("selAll").onclick = ()=>{
-  const recs = visibleRecords();
-  const allSel = recs.every(r=>selected.has(r.id));
-  recs.forEach(r=> allSel ? selected.delete(r.id) : selected.add(r.id));
-  render();
-};
-document.getElementById("printBtn").onclick = printSelected;
-document.getElementById("printerSel").onchange = e=>{ printerName = e.target.value; updatePrintBtn(); };
-
-loadRecords();
-checkDymo();
-setInterval(loadRecords, 30000);   // pick up newly-approved certs
-setInterval(checkDymo, 15000);
+loadRecords(true); checkDymo();
 if(DEMO.length) showPreview(DEMO[0]);
+setInterval(()=>loadRecords(false),CONFIG.pollMs);
+setInterval(checkDymo,15000);
 </script>
 </body>
 </html>
