@@ -1,0 +1,53 @@
+# MRG Cert Label Station
+
+A shop-floor Static Web App for printing material cert / heat-number stickers on a
+local DYMO LabelWriter — no more re-typing the same data into the DYMO app.
+
+## How it works
+
+1. **Troy approves a cert packet** in the purchasing-bot review flow. The approved
+   packet (PO, heat #, material, spec, size, qty, part) becomes a "ready to print" label.
+2. **An operator opens this app** on the computer that has the DYMO plugged in.
+3. They see the list of approved-but-unprinted certs (newest first), can search all
+   certs for reprints, **multi-select**, and hit **Print selected**.
+4. The browser talks straight to the **DYMO Connect Web Service** on `127.0.0.1:41951`
+   on that same machine — the sticker prints right there. Printed certs drop off the
+   "Ready" list automatically.
+
+The cloud app → local printer path works because the DYMO web service answers any
+origin (`Access-Control-Allow-Origin: *`) and `127.0.0.1` always resolves to the
+machine the browser is running on. No agent, no central print server, no barcode scanner.
+
+## Per-station requirement (one-time)
+
+Each machine that **prints** needs:
+- **DYMO Connect** installed (`winget install DYMO.DYMOConnect`) — provides the web service + trusted cert
+- A DYMO LabelWriter plugged in
+
+Machines that only view/approve need nothing but a browser.
+
+## Wiring (status)
+
+- **Front-end** — this repo. Runs standalone with embedded demo data when the backend
+  is unreachable, so it always renders.
+- **Backend** — `/api/labels` (GET, list approved certs) and `/api/labels/printed`
+  (POST, mark printed) are served by the MRG purchasing-bot Functions app
+  (`mrg-purchasing-fn`). Set `CONFIG.apiBase` in `index.html` to that host once the
+  endpoints are deployed. See `azure-functions/purchasing-bot` in MRG-sandbox.
+
+## Label format
+
+```
+{partNumber} PO:{poNumber}
+{material} {spec} {size}
+HT#{heat} QTY {quantity}
+```
+
+The DYMO label XML in `index.html` (`buildLabelXml`) is a placeholder sized for a
+30334 2-1/4" × 1-1/4" label. Design the real master tag once in DYMO Connect to match
+the shop's actual label stock, then paste its `<DieCutLabel>` block in.
+
+## Deploy
+
+Auto-deploys to Azure Static Web Apps (MRG tenant) on push to `main` via
+`.github/workflows/azure-static-web-apps.yml`.

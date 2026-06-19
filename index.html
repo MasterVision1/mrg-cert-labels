@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cert Label Station — MRG</title>
+<style>
+  :root{
+    --bg:#0f1216; --panel:#171c23; --panel2:#1d242d; --line:#2a333d;
+    --ink:#e8edf2; --muted:#93a1b0; --accent:#3b82f6; --accent-2:#2563eb;
+    --good:#22c55e; --good-bg:#0f2a1a; --warn:#f59e0b; --chip:#222c36;
+    --sel:#13355f; --sel-line:#3b82f6;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:15px/1.45 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    display:flex; flex-direction:column; height:100vh; overflow:hidden;
+  }
+  header{
+    display:flex; align-items:center; gap:14px; padding:12px 18px;
+    background:var(--panel); border-bottom:1px solid var(--line); flex:none;
+  }
+  .brand{font-weight:800; letter-spacing:.3px; font-size:17px}
+  .brand small{font-weight:600; color:var(--muted); margin-left:8px; font-size:12px}
+  .dymo-status{margin-left:auto; display:flex; align-items:center; gap:10px; font-size:13px}
+  .dot{width:9px;height:9px;border-radius:50%;background:#555;box-shadow:0 0 0 3px #ffffff10}
+  .dot.ok{background:var(--good)} .dot.bad{background:#ef4444}
+  select.printer{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:13px}
+
+  .tabs{display:flex; gap:4px; padding:10px 18px 0; background:var(--panel); flex:none}
+  .tab{padding:8px 16px; border-radius:9px 9px 0 0; cursor:pointer; color:var(--muted); font-weight:600; border:1px solid transparent; border-bottom:none}
+  .tab.active{background:var(--bg); color:var(--ink); border-color:var(--line)}
+  .tab .count{display:inline-block;margin-left:7px;background:var(--chip);color:var(--muted);border-radius:20px;padding:1px 8px;font-size:12px;font-weight:700}
+  .tab.active .count{background:var(--accent);color:#fff}
+
+  .toolbar{display:flex; gap:10px; align-items:center; padding:12px 18px; flex:none}
+  .search{flex:1; display:flex; align-items:center; gap:8px; background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:8px 12px}
+  .search input{flex:1; background:transparent; border:none; outline:none; color:var(--ink); font-size:15px}
+  .btn{border:none; border-radius:10px; padding:10px 16px; font-weight:700; cursor:pointer; font-size:14px}
+  .btn:disabled{opacity:.45; cursor:not-allowed}
+  .btn-ghost{background:var(--panel2); color:var(--ink); border:1px solid var(--line)}
+  .btn-print{background:var(--accent); color:#fff; min-width:170px}
+  .btn-print:not(:disabled):hover{background:var(--accent-2)}
+
+  main{flex:1; display:grid; grid-template-columns:1fr 360px; gap:0; min-height:0}
+  .list{overflow:auto; padding:0 18px 18px}
+  .list-head{display:flex;align-items:center;gap:12px;color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;padding:6px 14px}
+  .row{
+    display:flex; align-items:center; gap:14px; padding:12px 14px; border:1px solid var(--line);
+    border-radius:12px; background:var(--panel); margin-bottom:8px; cursor:pointer; transition:.08s;
+  }
+  .row:hover{border-color:#3a4654}
+  .row.sel{background:var(--sel); border-color:var(--sel-line)}
+  .row .chk{width:22px;height:22px;border-radius:6px;border:2px solid #46535f;flex:none;display:grid;place-items:center;font-size:14px;color:#fff}
+  .row.sel .chk{background:var(--accent);border-color:var(--accent)}
+  .row .main{flex:1;min-width:0}
+  .row .l1{font-weight:700}
+  .row .l2{color:var(--muted);font-size:13.5px}
+  .row .meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+  .chipx{font-size:11.5px;background:var(--chip);color:#aebccb;border-radius:6px;padding:2px 7px;font-weight:600}
+  .chipx.heat{background:#2a1f33;color:#d8b4fe}
+  .chipx.po{background:#0f2436;color:#7dd3fc}
+  .row .when{color:var(--muted);font-size:12px;white-space:nowrap}
+  .row .printed-tag{font-size:11px;color:var(--good);font-weight:700}
+
+  aside{border-left:1px solid var(--line); background:var(--panel2); padding:18px; overflow:auto; display:flex; flex-direction:column; gap:14px}
+  aside h3{margin:0;font-size:12px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted)}
+  /* Sticker preview — mirrors the physical 2-up wrap tag */
+  .sticker-wrap{background:#fff;border-radius:8px;padding:10px;display:flex;justify-content:center}
+  .sticker{display:flex;color:#000;font-family:"Arial Narrow",Arial,sans-serif}
+  .sticker .face{padding:10px 14px;width:185px}
+  .sticker .perf{border-left:2px dashed #999;margin:6px 0}
+  .sticker .sl{font-size:13px;font-weight:700;line-height:1.5;white-space:nowrap;overflow:hidden}
+  .sticker .sl.dim{font-weight:600}
+  .empty{color:var(--muted);text-align:center;padding:60px 20px}
+  .empty .big{font-size:40px;margin-bottom:8px}
+  .summary{font-size:13px;color:var(--muted)}
+  .summary b{color:var(--ink)}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#111820;border:1px solid var(--line);padding:12px 18px;border-radius:12px;box-shadow:0 10px 30px #0008;font-weight:600;opacity:0;transition:.2s;pointer-events:none}
+  .toast.show{opacity:1}
+  .toast.err{border-color:#ef4444}
+  .toast.ok{border-color:var(--good)}
+  kbd{background:#0c1014;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:11px;color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">Cert Label Station <small>MRG Tool &amp; Die</small></span>
+  <div class="dymo-status">
+    <span class="dot" id="dymoDot"></span>
+    <span id="dymoText">Checking DYMO…</span>
+    <select class="printer" id="printerSel" title="DYMO printer on this computer"></select>
+  </div>
+</header>
+
+<div class="tabs">
+  <div class="tab active" data-view="ready">Ready to Print <span class="count" id="cReady">0</span></div>
+  <div class="tab" data-view="all">All Certs <span class="count" id="cAll">0</span></div>
+</div>
+
+<div class="toolbar">
+  <label class="search">
+    🔎 <input id="q" placeholder="Search PO, heat #, part, material…  (type to filter)" />
+  </label>
+  <button class="btn btn-ghost" id="selAll">Select all shown</button>
+  <button class="btn btn-print" id="printBtn" disabled>Print selected</button>
+</div>
+
+<main>
+  <div class="list" id="list"></div>
+  <aside>
+    <h3>Sticker preview</h3>
+    <div class="sticker-wrap" id="preview"></div>
+    <h3>Selection</h3>
+    <div class="summary" id="selSummary">Nothing selected.</div>
+    <div style="margin-top:auto;color:var(--muted);font-size:12px;line-height:1.6">
+      <b style="color:var(--ink)">How it works</b><br>
+      Troy approves a cert packet → it appears here. Pick the ones to label,
+      hit <kbd>Print selected</kbd>, and they print on <b>this computer's</b> DYMO.
+      Printed certs drop off the "Ready" list automatically.
+    </div>
+  </aside>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* =========================================================================
+   CONFIG
+   ========================================================================= */
+const CONFIG = {
+  // Backend that serves approved cert labels. When unreachable, the app falls
+  // back to embedded demo data so the station still works / can be demoed.
+  apiBase: "",                                   // e.g. "https://mrg-purchasing-fn.azurewebsites.net"
+  labelsPath: "/api/labels",                     // GET ?status=unprinted|all&q=&top=
+  markPrintedPath: "/api/labels/printed",        // POST {ids:[...]}
+  dymoBase: "https://127.0.0.1:41951/DYMO/DLS/Printing",
+  // The sticker layout. {tokens} pulled from each label record. Empty pieces collapse.
+  format: {
+    line1: "{partNumber} PO:{poNumber}",
+    line2: "{material} {spec} {size}",
+    line3: "HT#{heat} QTY {quantity}",
+  },
+  copiesPerCert: 1,        // physical tag is 2-up; DYMO label is defined 2-up, so 1 print = 1 pair
+};
+
+/* =========================================================================
+   DEMO DATA — the two real packets from the shop + a few more.
+   Replaced live by /api/labels when the backend is reachable.
+   ========================================================================= */
+const DEMO = [
+  { id:"d1", partNumber:"72302/-1", poNumber:"108799", material:"303 SS", spec:"AMS 5640", size:".5X1.5X12'", heat:"67535042", quantity:"4", supplier:"Jorgensen Steel & Aluminum", lane:"Material", filedAt:"2026-06-19T13:05:00Z", printed:false },
+  { id:"d2", partNumber:"", poNumber:"108665", material:"316/316L HRAP BAR", spec:"ASTM A479", size:"0.750 x 2.000 x 12.000", heat:"297407", quantity:"1", supplier:"Jorgensen Steel & Aluminum", lane:"Material", filedAt:"2026-06-19T12:38:00Z", printed:false },
+  { id:"d3", partNumber:"71880/-2", poNumber:"108575", material:"4140 HT", spec:"AMS 6382", size:"1.250 RD x 12'", heat:"H44219", quantity:"6", supplier:"Castle Metals", lane:"Material", filedAt:"2026-06-19T11:20:00Z", printed:false },
+  { id:"d4", partNumber:"72145", poNumber:"108540", material:"6061-T6", spec:"AMS 4117", size:"2.000 x 2.000 x 12'", heat:"4471102", quantity:"2", supplier:"TW Metals", lane:"Material", filedAt:"2026-06-18T15:02:00Z", printed:true },
+  { id:"d5", partNumber:"72290/-1", poNumber:"108612", material:"17-4 PH", spec:"AMS 5643", size:"1.000 RD x 12'", heat:"V90233", quantity:"3", supplier:"Jorgensen Steel & Aluminum", lane:"Material", filedAt:"2026-06-18T09:41:00Z", printed:true },
+];
+
+/* =========================================================================
+   STATE
+   ========================================================================= */
+let RECORDS = [];
+let view = "ready";          // "ready" | "all"
+let selected = new Set();
+let printerName = null;
+
+/* =========================================================================
+   DATA LAYER
+   ========================================================================= */
+async function loadRecords(){
+  const url = CONFIG.apiBase + CONFIG.labelsPath + "?status=all&top=500";
+  try{
+    const r = await fetch(url, { headers:{ "Accept":"application/json" } });
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    RECORDS = await r.json();
+  }catch(e){
+    // Backend not wired yet / offline → demo data so the station still runs.
+    RECORDS = DEMO.slice();
+  }
+  render();
+}
+
+async function markPrinted(ids){
+  // Optimistic local update
+  ids.forEach(id=>{ const rec = RECORDS.find(r=>r.id===id); if(rec) rec.printed = true; });
+  render();
+  try{
+    await fetch(CONFIG.apiBase + CONFIG.markPrintedPath, {
+      method:"POST", headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ ids }),
+    });
+  }catch(e){ /* demo / offline — local state already updated */ }
+}
+
+/* =========================================================================
+   FORMATTING — build the 3 sticker lines from a record
+   ========================================================================= */
+function fillTemplate(tpl, rec){
+  return tpl.replace(/\{(\w+)\}/g, (_,k)=> (rec[k]==null?"":String(rec[k]).trim()))
+            .replace(/\s{2,}/g," ")          // collapse gaps from empty tokens
+            .replace(/PO:\s*$/,"")            // drop dangling "PO:" if no PO
+            .replace(/HT#\s*/,"HT#")
+            .trim();
+}
+function stickerLines(rec){
+  return [CONFIG.format.line1, CONFIG.format.line2, CONFIG.format.line3]
+    .map(t=>fillTemplate(t, rec)).filter(Boolean);
+}
+
+/* =========================================================================
+   DYMO — talk straight to the local web service (no SDK bundle needed)
+   ========================================================================= */
+async function dymoGet(path){
+  const r = await fetch(CONFIG.dymoBase + path, { method:"GET" });
+  return await r.text();
+}
+async function checkDymo(){
+  const dot = document.getElementById("dymoDot");
+  const txt = document.getElementById("dymoText");
+  const sel = document.getElementById("printerSel");
+  try{
+    const status = (await dymoGet("/StatusConnected")).trim();
+    const xml = await dymoGet("/GetPrinters");
+    const doc = new DOMParser().parseFromString(xml, "text/xml");
+    const printers = [...doc.querySelectorAll("LabelWriterPrinter, Printer")]
+      .map(p=>({
+        name: p.querySelector("Name")?.textContent?.trim(),
+        connected: (p.querySelector("IsConnected")?.textContent?.trim()||"True")==="True",
+      }))
+      .filter(p=>p.name);
+    sel.innerHTML = "";
+    if(printers.length){
+      printers.forEach(p=>{
+        const o=document.createElement("option"); o.value=p.name; o.textContent=p.name + (p.connected?"":" (offline)");
+        sel.appendChild(o);
+      });
+      printerName = printers[0].name;
+      dot.className="dot ok"; txt.textContent = printers.length+" DYMO ready";
+    }else{
+      const o=document.createElement("option"); o.textContent="No DYMO printer found"; sel.appendChild(o);
+      dot.className="dot bad"; txt.textContent="No printer";
+      printerName=null;
+    }
+  }catch(e){
+    document.getElementById("dymoDot").className="dot bad";
+    document.getElementById("dymoText").textContent="DYMO service not running";
+    sel.innerHTML='<option>Install / start DYMO Connect</option>';
+    printerName=null;
+  }
+  updatePrintBtn();
+}
+
+// Build DYMO Label v8 XML for one sticker (3 lines, one text object).
+// NOTE: LabelType/size must match the physical label stock loaded in the shop.
+// Design the master once in DYMO Connect, paste its <DieCutLabel> here.
+function buildLabelXml(rec){
+  const lines = stickerLines(rec).map(s=>
+    `<String>${escapeXml(s)}</String><Attributes><Font Family="Arial" Size="9" Bold="True" Italic="False" Underline="False" Strikeout="False"/><ForeColor Alpha="255" Red="0" Green="0" Blue="0"/></Attributes>`
+  ).join('<LineTextSpan/>');
+  return `<?xml version="1.0" encoding="utf-8"?>
+<DieCutLabel Version="8.0" Units="twips">
+  <PaperOrientation>Landscape</PaperOrientation>
+  <Id>LargeMultipurpose</Id>
+  <PaperName>30334 2-1/4 in x 1-1/4 in</PaperName>
+  <DrawCommands><RoundRectangle X="0" Y="0" Width="3240" Height="1800" Rx="180" Ry="180"/></DrawCommands>
+  <ObjectInfo>
+    <TextObject>
+      <Name>CERT</Name>
+      <ForeColor Alpha="255" Red="0" Green="0" Blue="0"/>
+      <BackColor Alpha="0" Red="255" Green="255" Blue="255"/>
+      <LinkedObjectName/><Rotation>Rotation0</Rotation><IsMirrored>False</IsMirrored><IsVariable>True</IsVariable>
+      <HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment>
+      <TextFitMode>ShrinkToFit</TextFitMode><UseFullFontHeight>True</UseFullFontHeight><Verticalized>False</Verticalized>
+      <StyledText><Element><String>${escapeXml(stickerLines(rec).join("\n"))}</String><Attributes><Font Family="Arial" Size="9" Bold="True"/><ForeColor Alpha="255" Red="0" Green="0" Blue="0"/></Attributes></Element></StyledText>
+    </TextObject>
+    <Bounds X="120" Y="100" Width="3000" Height="1600"/>
+  </ObjectInfo>
+</DieCutLabel>`;
+}
+function escapeXml(s){return String(s).replace(/[<>&'"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;',"'":'&apos;','"':'&quot;'}[c]));}
+
+async function dymoPrint(rec){
+  const body = new URLSearchParams();
+  body.set("printerName", printerName);
+  body.set("printParamsXml", `<LabelWriterPrintParams><Copies>${CONFIG.copiesPerCert}</Copies><PrintQuality>BarcodeAndGraphics</PrintQuality></LabelWriterPrintParams>`);
+  body.set("labelXml", buildLabelXml(rec));
+  body.set("labelSetXml", "");
+  const r = await fetch(CONFIG.dymoBase + "/PrintLabel", {
+    method:"POST",
+    headers:{ "Content-Type":"application/x-www-form-urlencoded" },
+    body: body.toString(),
+  });
+  if(!r.ok) throw new Error("Print failed: HTTP "+r.status);
+}
+
+async function printSelected(){
+  if(!printerName){ toast("No DYMO printer on this computer.", "err"); return; }
+  const ids = [...selected];
+  const recs = ids.map(id=>RECORDS.find(r=>r.id===id)).filter(Boolean);
+  const btn = document.getElementById("printBtn");
+  btn.disabled = true; btn.textContent = "Printing…";
+  let ok=0, fail=0;
+  for(const rec of recs){
+    try{ await dymoPrint(rec); ok++; }
+    catch(e){ fail++; console.error(e); }
+  }
+  if(ok) await markPrinted(recs.slice(0,ok).map(r=>r.id));
+  selected.clear();
+  toast(`${ok} sticker${ok!==1?"s":""} sent to ${printerName}` + (fail?` · ${fail} failed`:""), fail?"err":"ok");
+  btn.textContent="Print selected";
+  render();
+}
+
+/* =========================================================================
+   RENDER
+   ========================================================================= */
+function fmtWhen(iso){
+  try{
+    const d = new Date(iso); const now=new Date();
+    const mins = Math.round((now-d)/60000);
+    if(mins<60) return mins+"m ago";
+    if(mins<1440) return Math.round(mins/60)+"h ago";
+    return d.toLocaleDateString(undefined,{month:"short",day:"numeric"});
+  }catch(e){ return ""; }
+}
+function visibleRecords(){
+  const q = document.getElementById("q").value.trim().toLowerCase();
+  let recs = RECORDS.slice().sort((a,b)=> new Date(b.filedAt)-new Date(a.filedAt));
+  if(view==="ready") recs = recs.filter(r=>!r.printed);
+  if(q){
+    recs = recs.filter(r=>[r.partNumber,r.poNumber,r.material,r.spec,r.size,r.heat,r.supplier]
+      .join(" ").toLowerCase().includes(q));
+  }
+  return recs;
+}
+function render(){
+  document.getElementById("cReady").textContent = RECORDS.filter(r=>!r.printed).length;
+  document.getElementById("cAll").textContent = RECORDS.length;
+  const recs = visibleRecords();
+  const list = document.getElementById("list");
+  if(!recs.length){
+    list.innerHTML = `<div class="empty"><div class="big">🎉</div>${view==="ready"?"All caught up — nothing waiting to print.":"No certs match your search."}</div>`;
+  }else{
+    list.innerHTML = "";
+    recs.forEach(rec=>{
+      const lines = stickerLines(rec);
+      const sel = selected.has(rec.id);
+      const div = document.createElement("div");
+      div.className = "row"+(sel?" sel":"");
+      div.innerHTML = `
+        <div class="chk">${sel?"✓":""}</div>
+        <div class="main">
+          <div class="l1">${esc(lines[0]||"(no part / PO)")}</div>
+          <div class="l2">${esc(lines[1]||"")}</div>
+          <div class="meta">
+            <span class="chipx po">PO ${esc(rec.poNumber||"—")}</span>
+            <span class="chipx heat">HT# ${esc(rec.heat||"—")}</span>
+            <span class="chipx">QTY ${esc(rec.quantity||"—")}</span>
+            <span class="chipx">${esc(rec.supplier||"")}</span>
+            ${rec.printed?'<span class="printed-tag">✓ printed</span>':''}
+          </div>
+        </div>
+        <div class="when">${fmtWhen(rec.filedAt)}</div>`;
+      div.onclick = ()=>{ toggle(rec.id); };
+      div.onmouseenter = ()=> showPreview(rec);
+      list.appendChild(div);
+    });
+  }
+  updatePrintBtn();
+  updateSummary();
+}
+function toggle(id){
+  if(selected.has(id)) selected.delete(id); else selected.add(id);
+  const rec = RECORDS.find(r=>r.id===id); if(rec) showPreview(rec);
+  render();
+}
+function updatePrintBtn(){
+  const btn = document.getElementById("printBtn");
+  btn.disabled = selected.size===0 || !printerName;
+  btn.textContent = selected.size ? `Print selected (${selected.size})` : "Print selected";
+}
+function updateSummary(){
+  const el = document.getElementById("selSummary");
+  if(!selected.size){ el.textContent="Nothing selected."; return; }
+  const recs = [...selected].map(id=>RECORDS.find(r=>r.id===id)).filter(Boolean);
+  el.innerHTML = `<b>${recs.length}</b> cert${recs.length!==1?"s":""} selected · `+
+    `${recs.length*CONFIG.copiesPerCert} sticker${recs.length*CONFIG.copiesPerCert!==1?"s":""} will print.`;
+}
+function showPreview(rec){
+  const lines = stickerLines(rec);
+  const face = `<div class="face">
+      <div class="sl">${esc(lines[0]||"")}</div>
+      <div class="sl dim">${esc(lines[1]||"")}</div>
+      <div class="sl">${esc(lines[2]||"")}</div>
+    </div>`;
+  // 2-up wrap tag — same data twice, perforation between
+  document.getElementById("preview").innerHTML =
+    `<div class="sticker">${face}<div class="perf"></div>${face}</div>`;
+}
+function esc(s){return String(s==null?"":s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));}
+
+function toast(msg,kind){
+  const t=document.getElementById("toast"); t.textContent=msg; t.className="toast show "+(kind||"");
+  clearTimeout(t._t); t._t=setTimeout(()=>t.className="toast",2600);
+}
+
+/* =========================================================================
+   WIRE UP
+   ========================================================================= */
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
+  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+  t.classList.add("active"); view=t.dataset.view; render();
+});
+document.getElementById("q").addEventListener("input", render);
+document.getElementById("selAll").onclick = ()=>{
+  const recs = visibleRecords();
+  const allSel = recs.every(r=>selected.has(r.id));
+  recs.forEach(r=> allSel ? selected.delete(r.id) : selected.add(r.id));
+  render();
+};
+document.getElementById("printBtn").onclick = printSelected;
+document.getElementById("printerSel").onchange = e=>{ printerName = e.target.value; updatePrintBtn(); };
+
+loadRecords();
+checkDymo();
+setInterval(loadRecords, 30000);   // pick up newly-approved certs
+setInterval(checkDymo, 15000);
+if(DEMO.length) showPreview(DEMO[0]);
+</script>
+</body>
+</html>
