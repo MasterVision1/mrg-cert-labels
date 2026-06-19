@@ -128,21 +128,21 @@ aside{display:flex;flex-direction:column;gap:14px;min-height:0;overflow:auto;pad
 
 /* sticker preview */
 .sticker-stage{background:#eef0f3;border-radius:10px;padding:16px;display:flex;justify-content:center;cursor:zoom-in;position:relative;overflow:hidden}
+#preview,#modalSticker{width:100%}
 .sticker-stage:hover{background:#e7eaee}
 .sticker-stage .zoom-hint{position:absolute;top:8px;right:10px;font-size:10.5px;color:var(--ink3);font-weight:700;text-transform:uppercase;letter-spacing:.04em;opacity:0;transition:.15s}
 .sticker-stage:hover .zoom-hint{opacity:1}
-/* On-screen sticker — clean, separated info zones. Mirrors the printed layout. */
-.sticker{background:#fff;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,.16);color:#000;font-family:Arial,Helvetica,sans-serif;width:300px;padding:12px 16px;border:1px solid #e3e3e3}
-.sticker .srow{display:flex;align-items:baseline;justify-content:space-between;gap:12px;white-space:nowrap}
-.sticker .big{font-size:15px;font-weight:800;letter-spacing:-.2px}
-.sticker .kv{font-size:13px;font-weight:800}
-.sticker .kv i{font-style:normal;font-weight:700;color:#777;font-size:9.5px;letter-spacing:.06em;margin-right:4px;text-transform:uppercase}
-.sticker .sdiv{height:1px;background:#d8d8d8;margin:8px 0}
-.sticker .smat{font-size:13.5px;font-weight:700;white-space:nowrap}
-.sticker .ssize{font-size:13px;font-weight:600;color:#222;margin-top:2px}
-.sticker.big{width:420px;padding:22px 28px;border-radius:10px}
-.sticker.big .big{font-size:24px} .sticker.big .kv{font-size:20px} .sticker.big .kv i{font-size:12px}
-.sticker.big .smat{font-size:20px} .sticker.big .ssize{font-size:18px} .sticker.big .sdiv{margin:13px 0}
+/* On-screen sticker — a real label-shaped box. The inner content is auto-scaled
+   to fit (like the printer's ShrinkToFit), so any length of text stays polished. */
+.sticker{position:relative;width:100%;background:#fff;border:1px solid #e1e1e1;border-radius:8px;box-shadow:0 3px 14px rgba(16,24,40,.13);overflow:hidden;color:#000;font-family:Arial,Helvetica,sans-serif}
+.sticker-inner{position:absolute;top:50%;left:50%;width:460px;transform:translate(-50%,-50%);transform-origin:center}
+.sticker .srow{display:flex;align-items:baseline;justify-content:space-between;gap:26px}
+.sticker .big{font-size:30px;font-weight:800;letter-spacing:-.5px;line-height:1.1}
+.sticker .kv{font-size:26px;font-weight:800;white-space:nowrap}
+.sticker .kv i{font-style:normal;font-weight:700;color:#8a8a8a;font-size:15px;letter-spacing:.06em;margin-right:7px;text-transform:uppercase}
+.sticker .sdiv{height:2px;background:#000;opacity:.13;margin:14px 0}
+.sticker .smat{font-size:26px;font-weight:700;line-height:1.25}
+.sticker .ssize{font-size:23px;font-weight:600;color:#1a1a1a;margin-top:4px;line-height:1.2}
 
 .print-status{display:flex;align-items:center;gap:9px;padding:11px 14px;border-radius:10px;font-weight:600;font-size:13px;cursor:pointer;transition:var(--ease) .15s}
 .print-status.ok{background:var(--green-soft);color:#0f7a37;border:1px solid #bfe6cd}
@@ -368,6 +368,7 @@ const CONFIG = {
 
 /* ========================= DEMO DATA ========================= */
 const DEMO = [
+  { id:"d0", partNumber:"", poNumber:"108535", material:"7050 Aluminum T7451 AMS4596", spec:"", size:"1.00000\" X Width 11.2500\" X Length 11.2500\"", heat:"703338C4", quantity:"6", supplier:"thyssenkrupp Materials NA", lane:"Material", approvedBy:"Troy", filedAt:"2026-06-19T15:30:00Z", printed:false },
   { id:"d1", partNumber:"72302/-1", poNumber:"108799", material:"303 SS", spec:"AMS 5640", size:".5X1.5X12'", heat:"67535042", quantity:"4", supplier:"Jorgensen Steel & Aluminum", lane:"Material", approvedBy:"Troy", filedAt:"2026-06-19T13:05:00Z", printed:false },
   { id:"d2", partNumber:"", poNumber:"108665", material:"316/316L HRAP BAR", spec:"ASTM A479", size:"0.750 x 2.000 x 12.000", heat:"297407", quantity:"1", supplier:"Jorgensen Steel & Aluminum", lane:"Material", approvedBy:"Troy", filedAt:"2026-06-19T12:38:00Z", printed:false },
   { id:"d3", partNumber:"71880/-2", poNumber:"108575", material:"4140 HT", spec:"AMS 6382", size:"1.250 RD x 12'", heat:"H44219", quantity:"6", supplier:"Castle Metals", lane:"Material", approvedBy:"Mary", filedAt:"2026-06-19T11:20:00Z", printed:false },
@@ -600,15 +601,16 @@ function fields(rec){
     heat:(rec.heat||"").trim(), qty:(rec.quantity||"").trim(),
   };
 }
-// One clean sticker with separated info zones (ID · material · heat/qty).
-// The physical label is a 2-up wrap; the DYMO template handles that — we don't
-// duplicate the data on screen.
-function stickerHtml(rec,big){
+// One clean sticker, separated zones (ID · material · heat/qty). Content lives in
+// .sticker-inner and is scaled to fit the label box by fitSticker().
+function stickerHtml(rec){
   const f=fields(rec);
   const matLine=[f.material,f.spec].filter(Boolean).join("  ·  ");
-  return `<div class="sticker${big?" big":""}">`+
-    `<div class="srow"><span class="big">${esc(f.part||"—")}</span>`+
-      `${f.po?`<span class="kv"><i>PO</i>${esc(f.po)}</span>`:""}</div>`+
+  const headline = f.part || (f.po?`PO ${f.po}`:"—");
+  const showPo = f.part && f.po;   // only show the PO chip when part is the headline
+  return `<div class="sticker"><div class="sticker-inner">`+
+    `<div class="srow"><span class="big">${esc(headline)}</span>`+
+      `${showPo?`<span class="kv"><i>PO</i>${esc(f.po)}</span>`:""}</div>`+
     `${(matLine||f.size)?`<div class="sdiv"></div>`:""}`+
     `${matLine?`<div class="smat">${esc(matLine)}</div>`:""}`+
     `${f.size?`<div class="ssize">${esc(f.size)}</div>`:""}`+
@@ -616,12 +618,25 @@ function stickerHtml(rec,big){
     `${(f.heat||f.qty)?`<div class="srow">`+
       `${f.heat?`<span class="kv"><i>Heat</i>${esc(f.heat)}</span>`:"<span></span>"}`+
       `${f.qty?`<span class="kv"><i>Qty</i>${esc(f.qty)}</span>`:""}</div>`:""}`+
-    `</div>`;
+    `</div></div>`;
+}
+// Size the label box to the selected label's aspect ratio, then scale the inner
+// content to fit — mirrors the printer's auto-fit so it's always polished.
+function fitSticker(box){
+  const L=currentLabel(), aspect=L.dh/L.dw;                 // landscape w/h
+  const sticker=box.querySelector(".sticker"), inner=box.querySelector(".sticker-inner");
+  if(!sticker||!inner) return;
+  const w=sticker.clientWidth || box.clientWidth-32;
+  sticker.style.height=Math.round(w/aspect)+"px";
+  inner.style.transform="translate(-50%,-50%)";
+  const padPx=Math.max(10, w*0.06);
+  const s=Math.min((w-padPx*2)/inner.offsetWidth, (sticker.clientHeight-padPx*2)/inner.offsetHeight);
+  inner.style.transform=`translate(-50%,-50%) scale(${s})`;
 }
 function showPreview(rec){
-  const stage=document.getElementById("stage");
-  document.getElementById("preview").innerHTML=stickerHtml(rec,false);
-  requestAnimationFrame(()=>scaleToFit(stage,document.querySelector("#preview .sticker")));
+  const stage=document.getElementById("stage"), host=document.getElementById("preview");
+  host.innerHTML=stickerHtml(rec);
+  requestAnimationFrame(()=>fitSticker(host));
   stage.onclick=()=>openModal(rec);
 }
 // Editable fields shown in the modal (key, label, full-width?).
@@ -631,19 +646,11 @@ const EDIT_FIELDS=[
   ["heat","Heat #"],["quantity","Qty"],["supplier","Supplier",true],
 ];
 let editDirty=false;
-let _renderSeq=0;
-async function renderModalSticker(){
-  const stage=document.getElementById("modalStage"), host=document.getElementById("modalSticker");
-  // HTML mockup first (instant), then swap in the real DYMO render if reachable.
-  host.innerHTML=stickerHtml(modalRec,true);
-  requestAnimationFrame(()=>scaleToFit(stage,host.querySelector(".sticker")));
-  if(!dymoReachable) return;
-  const seq=++_renderSeq;
-  try{
-    const url=await renderViaDymo(modalRec);
-    if(seq!==_renderSeq) return;                     // a newer edit superseded this
-    host.innerHTML=`<img class="dymo-img" src="${url}" alt="DYMO label preview">`;
-  }catch(e){ /* keep the HTML mockup */ }
+function renderModalSticker(){
+  // Sharp, vector HTML preview, auto-fit to the selected label shape.
+  const host=document.getElementById("modalSticker");
+  host.innerHTML=stickerHtml(modalRec);
+  requestAnimationFrame(()=>fitSticker(host));
 }
 function openModal(rec){
   modalRec=JSON.parse(JSON.stringify(rec));   // working copy — edits don't touch the list until saved
@@ -694,7 +701,7 @@ async function saveEdits(){
 function closeModal(){document.getElementById("overlay").classList.remove("show");modalRec=null;}
 
 /* ========================= UTIL ========================= */
-function esc(s){return String(s==null?"":s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));}
+function esc(s){return String(s==null?"":s).replace(/[<>&"']/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));}
 function toast(m,k){const t=document.getElementById("toast");t.textContent=m;t.className="toast show "+(k||"");clearTimeout(t._t);t._t=setTimeout(()=>t.className="toast "+(k||""),3600);}
 
 /* ========================= WIRE ========================= */
