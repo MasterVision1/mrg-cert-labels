@@ -35,6 +35,23 @@ Machines that only view/approve need nothing but a browser.
   (`mrg-purchasing-fn`). Set `CONFIG.apiBase` in `index.html` to that host once the
   endpoints are deployed. See `azure-functions/purchasing-bot` in MRG-sandbox.
 
+## DYMO capabilities (all validated against the live DYMO Connect service)
+
+- **WYSIWYG preview** — the review modal renders the label with DYMO's own engine
+  (`RenderLabel`), so what you see is exactly what prints (HTML mock as fallback
+  when the service isn't reachable).
+- **Label sizes** — Multipurpose 2¼×1¼ (30334, default), Address (30252), Large
+  Address (30321), Shipping (30256), Return Address (30330). Each `Id`/`PaperName`
+  was confirmed to render. Pick in Print Settings.
+- **Barcode** — optional Code128 of the Heat # or PO #, for downstream scanning.
+- **Copies** — 1–50 per cert.
+- **Printer select** — auto-detects connected DYMO printers; multi-printer dropdown.
+
+Note: the built-in sizes print correctly, but the shop's real tag is a 2-up wrap
+label. For a pixel-perfect match, design it once in DYMO Connect and paste the XML
+into `CONFIG.labelTemplateXml` (named objects PART/PO/MATERIAL/SIZE/HEAT/QTY are
+merged in). Physical print still needs one confirmation on a real station.
+
 ## Label format
 
 ```

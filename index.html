@@ -152,6 +152,15 @@ aside{display:flex;flex-direction:column;gap:14px;min-height:0;overflow:auto;pad
 .print-status.ok .dot{background:var(--green)} .print-status.bad .dot{background:var(--red)} .print-status.warn .dot{background:var(--amber)}
 .print-status .arr{margin-left:auto;font-size:12px;opacity:.7}
 
+.dymo-img{max-width:100%;height:auto;background:#fff;border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,.16);display:block}
+.setbd{display:flex;flex-direction:column;gap:12px}
+.set{display:flex;flex-direction:column;gap:5px}
+.set.row{flex-direction:row;align-items:center;justify-content:space-between;gap:10px}
+.set label{font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em}
+.set select,.set input[type=number]{border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-weight:600;color:var(--ink);background:var(--surf)}
+.set input[type=number]{width:72px}
+.set .chk{display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:13px;color:var(--ink);font-weight:600}
+.set .chk input{width:17px;height:17px;accent-color:var(--primary)}
 .howto{color:var(--ink2);font-size:12.5px;line-height:1.65}
 .howto b{color:var(--ink)}
 kbd{background:var(--canvas-mute);border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:1px 6px;font-size:11px;color:var(--ink2);font-family:var(--f);font-weight:700}
@@ -269,6 +278,17 @@ kbd{background:var(--canvas-mute);border:1px solid var(--line);border-bottom-wid
       </div>
     </div>
     <div class="card">
+      <div class="hd">Print settings</div>
+      <div class="bd setbd">
+        <div class="set"><label>Label size</label><select id="labelSel"></select></div>
+        <div class="set row">
+          <label class="chk"><input type="checkbox" id="bcOn"> <span>Add barcode</span></label>
+          <select id="bcField"><option value="heat">Heat #</option><option value="po">PO #</option></select>
+        </div>
+        <div class="set row"><label>Copies</label><input type="number" id="copies" min="1" max="50" value="1"></div>
+      </div>
+    </div>
+    <div class="card">
       <div class="hd">How it works</div>
       <div class="bd howto">
         A cert packet is approved → it appears in <b>Ready to Print</b> instantly. Pick the
@@ -334,11 +354,16 @@ const CONFIG = {
   // names: PART, PO, MATERIAL, SIZE, HEAT, QTY. The app then merges the data into
   // your template via LabelSet. Leave null to use the built-in layout below.
   labelTemplateXml: null,
-  // Built-in fallback label geometry. These exact values were validated against
-  // the live DYMO Connect service (RenderLabel -> 200). The Id/PaperName MUST be
-  // a label the DYMO software recognizes — set these to match the shop's actual
-  // tag, or (better) use labelTemplateXml from DYMO Connect for the real wrap tag.
-  label: { id:"Address", paperName:"30252 Address", drawW:1581, drawH:5040, bx:332, by:150, bw:4822, bh:1260, fontSize:12 },
+  // Label stock catalog — every entry validated against the live DYMO Connect
+  // service (RenderLabel -> 200). drawW/drawH are the label's native twips.
+  labelTypes: [
+    { key:"mp30334",      name:"Multipurpose 2¼ × 1¼ (30334)", id:"MultiPurpose", paperName:"30334 2-1/4 in x 1-1/4 in", dw:1800, dh:3240 },
+    { key:"address",      name:"Address (30252)",              id:"Address",      paperName:"30252 Address",            dw:1581, dh:5040 },
+    { key:"largeaddress", name:"Large Address (30321)",        id:"LargeAddress", paperName:"30321 Large Address",      dw:2016, dh:5040 },
+    { key:"shipping",     name:"Shipping (30256)",             id:"Shipping",     paperName:"30256 Shipping",           dw:3331, dh:5760 },
+    { key:"returnaddress",name:"Return Address (30330)",       id:"ReturnAddress",paperName:"30330 Return Address",     dw:1080, dh:2880 },
+  ],
+  defaultLabelKey: "mp30334",
 };
 
 /* ========================= DEMO DATA ========================= */
@@ -351,7 +376,9 @@ const DEMO = [
 ];
 
 /* ========================= STATE ========================= */
-let RECORDS=[], view="ready", selected=new Set(), printerName=null, dymoOk=false, modalRec=null, knownIds=new Set();
+let RECORDS=[], view="ready", selected=new Set(), printerName=null, dymoOk=false, dymoReachable=false, modalRec=null, knownIds=new Set();
+let selLabelKey=null, barcodeOn=false, barcodeField="heat", copies=1;
+function currentLabel(){ return CONFIG.labelTypes.find(l=>l.key===(selLabelKey||CONFIG.defaultLabelKey)) || CONFIG.labelTypes[0]; }
 
 /* ========================= DATA ========================= */
 async function loadRecords(initial){
@@ -400,13 +427,14 @@ async function checkDymo(){
   try{
     await dget("/StatusConnected");
     const xml=await dget("/GetPrinters");
+    dymoReachable=true;
     const doc=new DOMParser().parseFromString(xml,"text/xml");
     const printers=[...doc.querySelectorAll("LabelWriterPrinter, Printer")].map(p=>p.querySelector("Name")?.textContent?.trim()).filter(Boolean);
     if(printers.length){
       sel.innerHTML=printers.map(n=>`<option>${esc(n)}</option>`).join(""); sel.style.display=printers.length>1?"inline":"none";
       printerName=printers[0]; dymoOk=true; dymoState="ok";
     }else{ sel.style.display="none"; printerName=null; dymoOk=false; dymoState="noprinter"; }
-  }catch(e){ sel.style.display="none"; printerName=null; dymoOk=false; dymoState="off"; }
+  }catch(e){ sel.style.display="none"; printerName=null; dymoOk=false; dymoReachable=false; dymoState="off"; }
   paintDymo();
 }
 function paintDymo(){
@@ -441,13 +469,39 @@ function printLines(rec){
     [f.heat?`HEAT ${f.heat}`:"", f.qty?`QTY ${f.qty}`:""].filter(Boolean).join("      "),
   ].filter(Boolean);
 }
-// Built-in label, using the exact structure validated against the live DYMO
-// Connect service (RenderLabel -> 200). One ShrinkToFit text object so the
-// separated lines fit whatever label the shop sets in CONFIG.label.
+// Built-in label generator — structure validated live (RenderLabel -> 200).
+// Uses the selected label size; optionally adds a Code128 barcode (heat or PO).
+// In landscape the printable box is dh wide × dw tall (twips).
+function textObjectXml(str, bx, by, bw, bh, valign){
+  return `<ObjectInfo><TextObject><Name>CERT</Name><ForeColor Alpha="255" Red="0" Green="0" Blue="0" /><BackColor Alpha="0" Red="255" Green="255" Blue="255" /><LinkedObjectName /><Rotation>Rotation0</Rotation><IsMirrored>False</IsMirrored><IsVariable>True</IsVariable><HorizontalAlignment>Left</HorizontalAlignment><VerticalAlignment>${valign}</VerticalAlignment><TextFitMode>ShrinkToFit</TextFitMode><UseFullFontHeight>True</UseFullFontHeight><Verticalized>False</Verticalized><StyledText><Element><String>${str}</String><Attributes><Font Family="Arial" Size="12" Bold="True" Italic="False" Underline="False" Strikeout="False" /><ForeColor Alpha="255" Red="0" Green="0" Blue="0" /></Attributes></Element></StyledText></TextObject><Bounds X="${bx}" Y="${by}" Width="${bw}" Height="${bh}" /></ObjectInfo>`;
+}
+function barcodeObjectXml(text, bx, by, bw, bh){
+  return `<ObjectInfo><BarcodeObject><Name>BC</Name><ForeColor Alpha="255" Red="0" Green="0" Blue="0" /><BackColor Alpha="0" Red="255" Green="255" Blue="255" /><LinkedObjectName /><Rotation>Rotation0</Rotation><IsMirrored>False</IsMirrored><IsVariable>False</IsVariable><Text>${esc(text)}</Text><Type>Code128Auto</Type><Size>Small</Size><TextPosition>None</TextPosition><TextFont Family="Arial" Size="8" Bold="False" Italic="False" Underline="False" Strikeout="False" /><CheckSumFont Family="Arial" Size="8" Bold="False" Italic="False" Underline="False" Strikeout="False" /><TextEmbedding>None</TextEmbedding><ECLevel>0</ECLevel><HorizontalAlignment>Left</HorizontalAlignment><QuietZonesPadding Left="0" Top="0" Right="0" Bottom="0" /></BarcodeObject><Bounds X="${bx}" Y="${by}" Width="${bw}" Height="${bh}" /></ObjectInfo>`;
+}
 function buildLabelXml(rec){
-  const L=CONFIG.label;
+  const L=currentLabel();
+  const pad=120, printW=L.dh-pad*2, printH=L.dw;          // landscape printable
+  const f=fields(rec);
+  const bcText = barcodeField==="po" ? f.po : f.heat;
+  const useBc = barcodeOn && bcText;
+  const str=esc(printLines(rec).join("\n"));
+  let objs;
+  if(useBc){
+    objs = textObjectXml(str, pad, Math.round(printH*0.05), printW, Math.round(printH*0.58), "Top")
+         + barcodeObjectXml(bcText, pad, Math.round(printH*0.66), printW, Math.round(printH*0.28));
+  }else{
+    objs = textObjectXml(str, pad, pad, printW, printH-pad*2, "Middle");
+  }
   return `<?xml version="1.0" encoding="utf-8"?>
-<DieCutLabel Version="8.0" Units="twips"><PaperOrientation>Landscape</PaperOrientation><Id>${esc(L.id)}</Id><PaperName>${esc(L.paperName)}</PaperName><DrawCommands><RoundRectangle X="0" Y="0" Width="${L.drawW}" Height="${L.drawH}" Rx="270" Ry="270" /></DrawCommands><ObjectInfo><TextObject><Name>CERT</Name><ForeColor Alpha="255" Red="0" Green="0" Blue="0" /><BackColor Alpha="0" Red="255" Green="255" Blue="255" /><LinkedObjectName /><Rotation>Rotation0</Rotation><IsMirrored>False</IsMirrored><IsVariable>True</IsVariable><HorizontalAlignment>Left</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><TextFitMode>ShrinkToFit</TextFitMode><UseFullFontHeight>True</UseFullFontHeight><Verticalized>False</Verticalized><StyledText><Element><String>${esc(printLines(rec).join("\n"))}</String><Attributes><Font Family="Arial" Size="${L.fontSize}" Bold="True" Italic="False" Underline="False" Strikeout="False" /><ForeColor Alpha="255" Red="0" Green="0" Blue="0" /></Attributes></Element></StyledText></TextObject><Bounds X="${L.bx}" Y="${L.by}" Width="${L.bw}" Height="${L.bh}" /></ObjectInfo></DieCutLabel>`;
+<DieCutLabel Version="8.0" Units="twips"><PaperOrientation>Landscape</PaperOrientation><Id>${esc(L.id)}</Id><PaperName>${esc(L.paperName)}</PaperName><DrawCommands><RoundRectangle X="0" Y="0" Width="${L.dw}" Height="${L.dh}" Rx="180" Ry="180" /></DrawCommands>${objs}</DieCutLabel>`;
+}
+// Ask the DYMO service to render the exact label image (true WYSIWYG of the print).
+async function renderViaDymo(rec){
+  const body=new URLSearchParams({ labelXml: CONFIG.labelTemplateXml||buildLabelXml(rec), renderParamsXml:"", labelSetXml: CONFIG.labelTemplateXml?buildLabelSetXml(rec):"" });
+  const r=await fetch(CONFIG.dymoBase+"/RenderLabel",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:body.toString()});
+  if(!r.ok) throw new Error("render "+r.status);
+  const b64=(await r.text()).replace(/^"|"$/g,"");
+  return "data:image/png;base64,"+b64;
 }
 // Merge field values into a shop-designed template by named TextObject.
 function buildLabelSetXml(rec){
@@ -460,7 +514,7 @@ async function dymoPrintOne(rec){
   const useTpl=!!CONFIG.labelTemplateXml;
   const body=new URLSearchParams();
   body.set("printerName",printerName);
-  body.set("printParamsXml",`<LabelWriterPrintParams><Copies>${CONFIG.copiesPerCert}</Copies><PrintQuality>BarcodeAndGraphics</PrintQuality></LabelWriterPrintParams>`);
+  body.set("printParamsXml",`<LabelWriterPrintParams><Copies>${copies||1}</Copies><PrintQuality>BarcodeAndGraphics</PrintQuality></LabelWriterPrintParams>`);
   body.set("labelXml", useTpl?CONFIG.labelTemplateXml:buildLabelXml(rec));
   body.set("labelSetXml", useTpl?buildLabelSetXml(rec):"");
   const r=await fetch(CONFIG.dymoBase+"/PrintLabel",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:body.toString()});
@@ -577,10 +631,19 @@ const EDIT_FIELDS=[
   ["heat","Heat #"],["quantity","Qty"],["supplier","Supplier",true],
 ];
 let editDirty=false;
-function renderModalSticker(){
-  const stage=document.getElementById("modalStage");
-  document.getElementById("modalSticker").innerHTML=stickerHtml(modalRec,true);
-  requestAnimationFrame(()=>scaleToFit(stage,document.querySelector("#modalSticker .sticker")));
+let _renderSeq=0;
+async function renderModalSticker(){
+  const stage=document.getElementById("modalStage"), host=document.getElementById("modalSticker");
+  // HTML mockup first (instant), then swap in the real DYMO render if reachable.
+  host.innerHTML=stickerHtml(modalRec,true);
+  requestAnimationFrame(()=>scaleToFit(stage,host.querySelector(".sticker")));
+  if(!dymoReachable) return;
+  const seq=++_renderSeq;
+  try{
+    const url=await renderViaDymo(modalRec);
+    if(seq!==_renderSeq) return;                     // a newer edit superseded this
+    host.innerHTML=`<img class="dymo-img" src="${url}" alt="DYMO label preview">`;
+  }catch(e){ /* keep the HTML mockup */ }
 }
 function openModal(rec){
   modalRec=JSON.parse(JSON.stringify(rec));   // working copy — edits don't touch the list until saved
@@ -653,6 +716,18 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape")closeModal();});
 // Make connecting effortless: re-check whenever the worker returns to the tab.
 window.addEventListener("focus",checkDymo);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)checkDymo();});
+
+// Print settings
+selLabelKey=CONFIG.defaultLabelKey;
+(function initSettings(){
+  const ls=document.getElementById("labelSel");
+  ls.innerHTML=CONFIG.labelTypes.map(l=>`<option value="${l.key}">${esc(l.name)}</option>`).join("");
+  ls.value=selLabelKey;
+  ls.onchange=()=>{ selLabelKey=ls.value; if(modalRec) renderModalSticker(); };
+  document.getElementById("bcOn").onchange=e=>{ barcodeOn=e.target.checked; if(modalRec) renderModalSticker(); };
+  document.getElementById("bcField").onchange=e=>{ barcodeField=e.target.value; if(barcodeOn&&modalRec) renderModalSticker(); };
+  document.getElementById("copies").onchange=e=>{ copies=Math.max(1,Math.min(50,parseInt(e.target.value)||1)); e.target.value=copies; };
+})();
 
 loadRecords(true); checkDymo();
 if(DEMO.length) showPreview(DEMO[0]);
