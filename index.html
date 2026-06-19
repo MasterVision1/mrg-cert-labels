@@ -59,6 +59,8 @@ header{
 .dymo-pill.ok .dot{background:var(--green);box-shadow:0 0 0 3px rgba(22,163,74,.14)}
 .dymo-pill.bad{background:var(--red-soft);border-color:#f3c9ce}
 .dymo-pill.bad .dot{background:var(--red);box-shadow:0 0 0 3px rgba(220,53,69,.14)}
+.dymo-pill.warn{background:var(--amber-soft);border-color:#f3e0b5}
+.dymo-pill.warn .dot{background:var(--amber);box-shadow:0 0 0 3px rgba(245,158,11,.16)}
 .dymo-pill select{border:none;background:transparent;font:inherit;color:var(--ink);cursor:pointer;outline:none;max-width:170px}
 
 /* ---------- Sub bar: tabs + search ---------- */
@@ -140,8 +142,9 @@ aside{display:flex;flex-direction:column;gap:14px;min-height:0;overflow:auto;pad
 .print-status{display:flex;align-items:center;gap:9px;padding:11px 14px;border-radius:10px;font-weight:600;font-size:13px;cursor:pointer;transition:var(--ease) .15s}
 .print-status.ok{background:var(--green-soft);color:#0f7a37;border:1px solid #bfe6cd}
 .print-status.bad{background:var(--red-soft);color:#a3232f;border:1px solid #f3c9ce}
+.print-status.warn{background:var(--amber-soft);color:#9a6a06;border:1px solid #f3e0b5}
 .print-status .dot{width:9px;height:9px;border-radius:50%;flex:none}
-.print-status.ok .dot{background:var(--green)} .print-status.bad .dot{background:var(--red)}
+.print-status.ok .dot{background:var(--green)} .print-status.bad .dot{background:var(--red)} .print-status.warn .dot{background:var(--amber)}
 .print-status .arr{margin-left:auto;font-size:12px;opacity:.7}
 
 .howto{color:var(--ink2);font-size:12.5px;line-height:1.65}
@@ -186,6 +189,25 @@ kbd{background:var(--canvas-mute);border:1px solid var(--line);border-bottom-wid
 .btn-ghost{flex:none;border:1px solid var(--line);background:var(--surf);color:var(--ink2);border-radius:var(--r-btn);padding:10px 18px;font-weight:700;cursor:pointer}
 .btn-ghost:hover{background:var(--canvas-mute);border-color:var(--line-strong)}
 .modal .mf .grow{flex:1}
+.modal.wide{max-width:1020px}
+.mb.two{display:grid;grid-template-columns:1fr 1fr;gap:22px;padding:22px}
+.cap{margin-top:8px;color:var(--ink3);font-size:11.5px;text-align:center;font-weight:600}
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:11px 14px;margin-top:18px}
+.fields .f{display:flex;flex-direction:column;gap:4px}
+.fields .f.full{grid-column:1 / -1}
+.fields label{font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em}
+.fields input{border:1px solid var(--line);border-radius:8px;padding:9px 11px;font:inherit;font-weight:600;color:var(--ink);background:var(--surf);transition:var(--ease) .15s}
+.fields input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-soft)}
+.fields input.changed{border-color:var(--amber);background:var(--amber-soft)}
+.save{margin-top:16px;width:100%;background:var(--primary)!important;color:#fff!important;border:none!important;justify-content:center}
+.save:hover{background:var(--primary-dark)!important}
+.edit-badge{font-size:11px;font-weight:700;color:var(--amber);background:var(--amber-soft);border:1px solid #f3e0b5;padding:3px 9px;border-radius:var(--r-pill)}
+.col-right{display:flex;flex-direction:column;min-height:0}
+.pdf-hd{font-size:12px;font-weight:700;color:var(--ink2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px}
+.pdf-wrap{flex:1;min-height:420px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--canvas-mute);position:relative}
+.pdf-wrap iframe{width:100%;height:100%;border:none;display:block}
+.pdf-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--ink3);text-align:center;padding:24px;font-size:13px}
+@media(max-width:760px){.mb.two{grid-template-columns:1fr}.pdf-wrap{min-height:300px}}
 
 /* ---------- Toast ---------- */
 .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;padding:13px 20px;border-radius:12px;box-shadow:var(--sh-xl);font-weight:600;opacity:0;transition:var(--ease) .25s;pointer-events:none;z-index:70;display:flex;align-items:center;gap:10px;max-width:520px;text-align:center}
@@ -258,15 +280,28 @@ kbd{background:var(--canvas-mute);border:1px solid var(--line);border-bottom-wid
   <button class="btn-print" id="printBtn">🖨 Print stickers</button>
 </div>
 
-<!-- Big sticker / detail modal -->
+<!-- Review / edit / print modal -->
 <div class="overlay" id="overlay">
-  <div class="modal">
-    <div class="mh"><b id="modalTitle">Cert label</b><button class="x" id="modalX">✕</button></div>
-    <div class="mb">
-      <div class="sticker-stage" style="cursor:default;background:#eef0f3">
-        <div id="modalSticker"></div>
+  <div class="modal wide">
+    <div class="mh">
+      <b id="modalTitle">Review &amp; print</b>
+      <span class="edit-badge" id="editBadge" style="display:none">edited · unsaved</span>
+      <button class="x" id="modalX">✕</button>
+    </div>
+    <div class="mb two">
+      <div class="col-left">
+        <div class="sticker-stage" id="modalStage" style="cursor:text" title="Double-click to edit">
+          <span class="zoom-hint">✎ double-click to edit</span>
+          <div id="modalSticker"></div>
+        </div>
+        <div class="cap">Prints as a 2-up wrap tag on the DYMO.</div>
+        <div class="fields" id="editFields"></div>
+        <button class="btn-ghost save" id="saveEdits" style="display:none">Save changes</button>
       </div>
-      <dl class="detail" id="modalDetail"></dl>
+      <div class="col-right">
+        <div class="pdf-hd">Source cert packet</div>
+        <div class="pdf-wrap" id="pdfWrap"></div>
+      </div>
     </div>
     <div class="mf">
       <span class="grow"></span>
@@ -281,7 +316,7 @@ kbd{background:var(--canvas-mute);border:1px solid var(--line);border-bottom-wid
 <script>
 /* ========================= CONFIG ========================= */
 const CONFIG = {
-  apiBase: "",                                  // e.g. https://mrg-purchasing-fn.azurewebsites.net
+  apiBase: "https://mrg-purchasing-fn.azurewebsites.net",  // purchasing-bot Functions app
   labelsPath: "/api/labels",
   markPrintedPath: "/api/labels/printed",
   dymoBase: "https://127.0.0.1:41951/DYMO/DLS/Printing",
@@ -330,10 +365,22 @@ async function markPrinted(ids){
 function fill(tpl,rec){return tpl.replace(/\{(\w+)\}/g,(_,k)=>(rec[k]==null?"":String(rec[k]).trim())).replace(/\s{2,}/g," ").replace(/PO:\s*$/,"").trim();}
 function lines(rec){return [CONFIG.format.line1,CONFIG.format.line2,CONFIG.format.line3].map(t=>fill(t,rec)).filter(Boolean);}
 
-/* ========================= DYMO ========================= */
+/* ========================= DYMO =========================
+   Three consistent states used identically across the header pill, the
+   preview banner, and the print buttons:
+     ok        — printer connected, can print
+     noprinter — DYMO service running but no printer plugged in
+     off       — DYMO service unreachable / browser blocked localhost access
+*/
+let dymoState="off";   // "ok" | "noprinter" | "off"
+const DYMO_TEXT={
+  ok:{pill:"DYMO ready", banner:p=>`Ready to print on ${p}`, btn:n=>`🖨 Print ${n} sticker${n!==1?"s":""}`},
+  noprinter:{pill:"No printer", banner:()=>"DYMO running — plug in a printer", btn:()=>"🖨 No printer plugged in"},
+  off:{pill:"Connect DYMO", banner:()=>"DYMO not connected — click to allow", btn:()=>"🖨 Connect DYMO first"},
+};
 async function dget(p){const r=await fetch(CONFIG.dymoBase+p);return await r.text();}
 async function checkDymo(){
-  const pill=document.getElementById("dymoPill"), txt=document.getElementById("dymoText"), sel=document.getElementById("printerSel");
+  const sel=document.getElementById("printerSel");
   try{
     await dget("/StatusConnected");
     const xml=await dget("/GetPrinters");
@@ -341,29 +388,29 @@ async function checkDymo(){
     const printers=[...doc.querySelectorAll("LabelWriterPrinter, Printer")].map(p=>p.querySelector("Name")?.textContent?.trim()).filter(Boolean);
     if(printers.length){
       sel.innerHTML=printers.map(n=>`<option>${esc(n)}</option>`).join(""); sel.style.display=printers.length>1?"inline":"none";
-      printerName=printers[0]; dymoOk=true;
-      pill.className="dymo-pill ok"; txt.textContent=printers.length>1?`${printers.length} DYMO ready`:"DYMO ready";
-    }else{
-      sel.style.display="none"; printerName=null; dymoOk=false;
-      pill.className="dymo-pill bad"; txt.textContent="No printer found";
-    }
-  }catch(e){
-    sel.style.display="none"; printerName=null; dymoOk=false;
-    pill.className="dymo-pill bad"; txt.textContent="DYMO not connected";
-  }
-  paintPrintStatus(); updateActionBar();
+      printerName=printers[0]; dymoOk=true; dymoState="ok";
+    }else{ sel.style.display="none"; printerName=null; dymoOk=false; dymoState="noprinter"; }
+  }catch(e){ sel.style.display="none"; printerName=null; dymoOk=false; dymoState="off"; }
+  paintDymo();
 }
-function paintPrintStatus(){
+function paintDymo(){
+  const t=DYMO_TEXT[dymoState];
+  const pill=document.getElementById("dymoPill"), txt=document.getElementById("dymoText");
+  pill.className="dymo-pill "+(dymoState==="ok"?"ok":dymoState==="noprinter"?"warn":"bad");
+  txt.textContent = dymoState==="ok" ? (printerName && document.getElementById("printerSel").options.length>1 ? `${document.getElementById("printerSel").options.length} DYMO ready` : t.pill) : t.pill;
   const el=document.getElementById("printStatus");
-  if(dymoOk){ el.className="print-status ok"; el.innerHTML=`<span class="dot"></span> Ready to print on <b style="margin:0 4px">${esc(printerName)}</b><span class="arr">on this PC</span>`; }
-  else{ el.className="print-status bad"; el.innerHTML=`<span class="dot"></span> DYMO not connected — <b style="margin:0 4px">click to allow</b><span class="arr">↻</span>`; }
+  el.className="print-status "+(dymoState==="ok"?"ok":dymoState==="noprinter"?"warn":"bad");
+  el.innerHTML=`<span class="dot"></span> ${esc(t.banner(printerName))}<span class="arr">${dymoState==="ok"?"on this PC":"↻"}</span>`;
+  updateActionBar();
+  const mp=document.getElementById("modalPrint"); if(mp){mp.disabled=!dymoOk; mp.textContent=dymoOk?"🖨 Print this sticker":t.btn(1);}
 }
 // Clicking status re-attempts the connection. If the browser blocked localhost access,
 // re-fetching re-triggers the "allow" prompt; otherwise we guide the user.
 async function reconnectDymo(){
-  toast("Re-checking DYMO… allow access if your browser asks","");
+  toast("Re-checking DYMO…","");
   await checkDymo();
-  if(!dymoOk) setTimeout(()=>toast("Blocked? Click the 🔒 / ⓘ icon by the address bar → allow this site to access devices, then click here again","err"),700);
+  if(dymoState==="off") setTimeout(()=>toast("Blocked? Click the 🔒 / ⓘ icon by the address bar → allow this site to access devices, then click here again","err"),700);
+  else if(dymoState==="noprinter") toast("DYMO is connected — plug a label printer into this computer","");
 }
 
 function buildLabelXml(rec){
@@ -448,7 +495,7 @@ function updateActionBar(){
   const bar=document.getElementById("actionbar"), n=selected.size;
   if(n){ bar.classList.add("show");
     document.getElementById("actionSum").innerHTML=`<b>${n}</b> selected <span>· ${n*CONFIG.copiesPerCert} sticker${n*CONFIG.copiesPerCert!==1?"s":""}</span>`;
-    const b=document.getElementById("printBtn"); b.disabled=!dymoOk; b.textContent=dymoOk?`🖨 Print ${n} sticker${n!==1?"s":""}`:"🖨 DYMO not connected";
+    const b=document.getElementById("printBtn"); b.disabled=!dymoOk; b.textContent=dymoOk?`🖨 Print ${n} sticker${n!==1?"s":""}`:DYMO_TEXT[dymoState].btn(n);
   } else bar.classList.remove("show");
 }
 // Shrink a rendered sticker so the (possibly long) lines fit the stage — mirrors the
@@ -459,24 +506,77 @@ function scaleToFit(stage,sticker){
   const s=w>avail?avail/w:1;
   sticker.style.transformOrigin="center"; sticker.style.transform=`scale(${s})`;
 }
-function showPreview(rec){
+// One clean sticker face (the physical label is a 2-up wrap; the template handles
+// that — we don't duplicate the data on screen).
+function stickerHtml(rec,big){
   const ln=lines(rec);
-  const face=`<div class="face"><div class="sl">${esc(ln[0]||"")}</div><div class="sl dim">${esc(ln[1]||"")}</div><div class="sl">${esc(ln[2]||"")}</div></div>`;
+  return `<div class="sticker${big?" big":""}"><div class="face">`+
+    `<div class="sl">${esc(ln[0]||"")}</div><div class="sl dim">${esc(ln[1]||"")}</div><div class="sl">${esc(ln[2]||"")}</div>`+
+    `</div></div>`;
+}
+function showPreview(rec){
   const stage=document.getElementById("stage");
-  document.getElementById("preview").innerHTML=`<div class="sticker">${face}<div class="perf"></div>${face}</div>`;
+  document.getElementById("preview").innerHTML=stickerHtml(rec,false);
   requestAnimationFrame(()=>scaleToFit(stage,document.querySelector("#preview .sticker")));
   stage.onclick=()=>openModal(rec);
 }
+// Editable fields shown in the modal (key, label, full-width?).
+const EDIT_FIELDS=[
+  ["partNumber","Part / Job"],["poNumber","PO #"],
+  ["material","Material",true],["spec","Spec"],["size","Size"],
+  ["heat","Heat #"],["quantity","Qty"],["supplier","Supplier",true],
+];
+let editDirty=false;
+function renderModalSticker(){
+  const stage=document.getElementById("modalStage");
+  document.getElementById("modalSticker").innerHTML=stickerHtml(modalRec,true);
+  requestAnimationFrame(()=>scaleToFit(stage,document.querySelector("#modalSticker .sticker")));
+}
 function openModal(rec){
-  modalRec=rec; const ln=lines(rec);
-  const face=`<div class="face"><div class="sl">${esc(ln[0]||"")}</div><div class="sl dim">${esc(ln[1]||"")}</div><div class="sl">${esc(ln[2]||"")}</div></div>`;
-  document.getElementById("modalSticker").innerHTML=`<div class="sticker big">${face}<div class="perf"></div>${face}</div>`;
-  requestAnimationFrame(()=>scaleToFit(document.getElementById("modalSticker").parentElement,document.querySelector("#modalSticker .sticker")));
-  document.getElementById("modalTitle").textContent=(rec.partNumber||rec.poNumber||"Cert")+" — label";
-  const rows=[["PO #",rec.poNumber],["Part / Job",rec.partNumber],["Material",rec.material],["Spec",rec.spec],["Size",rec.size],["Heat #",rec.heat],["Quantity",rec.quantity],["Supplier",rec.supplier],["Approved by",rec.approvedBy],[rec.printed?"Printed":"Approved",whenTxt(rec.printed?rec.printedAt:rec.filedAt)]];
-  document.getElementById("modalDetail").innerHTML=rows.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v||"—")}</dd>`).join("");
-  const pb=document.getElementById("modalPrint"); pb.disabled=!dymoOk; pb.textContent=dymoOk?"🖨 Print this sticker":"DYMO not connected";
+  modalRec=JSON.parse(JSON.stringify(rec));   // working copy — edits don't touch the list until saved
+  modalRec._orig=rec; editDirty=false;
+  document.getElementById("modalTitle").textContent=(rec.partNumber||rec.poNumber||"Cert")+" — review & print";
+  renderModalSticker();
+  // editable fields
+  document.getElementById("editFields").innerHTML=EDIT_FIELDS.map(([k,lbl,full])=>
+    `<div class="f${full?" full":""}"><label>${esc(lbl)}</label><input data-k="${k}" value="${esc(modalRec[k]||"")}"></div>`).join("");
+  document.querySelectorAll("#editFields input").forEach(inp=>{
+    inp.oninput=()=>{
+      const k=inp.dataset.k; modalRec[k]=inp.value;
+      inp.classList.toggle("changed", (rec[k]||"")!==inp.value);
+      editDirty=true; renderModalSticker(); markDirty();
+    };
+  });
+  // source cert PDF
+  const wrap=document.getElementById("pdfWrap");
+  if(CONFIG.apiBase && rec.id && !String(rec.id).startsWith("d")){
+    wrap.innerHTML=`<iframe src="${CONFIG.apiBase}/api/labels/pdf?id=${encodeURIComponent(rec.id)}" title="cert packet"></iframe>`;
+  }else{
+    wrap.innerHTML=`<div class="pdf-empty">📄<div>The source cert packet will show here once the backend is connected.</div></div>`;
+  }
+  document.getElementById("saveEdits").style.display="none";
+  document.getElementById("editBadge").style.display="none";
+  paintDymo();
   document.getElementById("overlay").classList.add("show");
+}
+function markDirty(){
+  document.getElementById("saveEdits").style.display=editDirty?"flex":"none";
+  document.getElementById("editBadge").style.display=editDirty?"inline-block":"none";
+}
+async function saveEdits(){
+  if(!modalRec) return;
+  const id=modalRec.id, fields={};
+  EDIT_FIELDS.forEach(([k])=>fields[k]=modalRec[k]);
+  // update the real list record
+  const orig=modalRec._orig; if(orig) EDIT_FIELDS.forEach(([k])=>orig[k]=modalRec[k]);
+  editDirty=false; markDirty(); render(); showPreview(orig||modalRec);
+  try{
+    if(CONFIG.apiBase && !String(id).startsWith("d")){
+      const r=await fetch(CONFIG.apiBase+"/api/labels/update",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,fields})});
+      if(!r.ok) throw 0;
+    }
+    toast("Saved","ok");
+  }catch(e){ toast("Saved locally (backend offline)","err"); }
 }
 function closeModal(){document.getElementById("overlay").classList.remove("show");modalRec=null;}
 
@@ -496,8 +596,13 @@ document.getElementById("modalX").onclick=closeModal;
 document.getElementById("modalClose2").onclick=closeModal;
 document.getElementById("overlay").onclick=e=>{if(e.target.id==="overlay")closeModal();};
 document.getElementById("modalPrint").onclick=()=>{if(modalRec){printRecs([modalRec]);closeModal();}};
-document.getElementById("printerSel").onchange=e=>{printerName=e.target.value;paintPrintStatus();};
+document.getElementById("saveEdits").onclick=saveEdits;
+document.getElementById("modalStage").ondblclick=()=>{const i=document.querySelector("#editFields input");if(i){i.focus();i.select();}};
+document.getElementById("printerSel").onchange=e=>{printerName=e.target.value;paintDymo();};
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeModal();});
+// Make connecting effortless: re-check whenever the worker returns to the tab.
+window.addEventListener("focus",checkDymo);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)checkDymo();});
 
 loadRecords(true); checkDymo();
 if(DEMO.length) showPreview(DEMO[0]);
