@@ -147,6 +147,20 @@ aside{display:flex;flex-direction:column;gap:14px;min-height:0;overflow:auto;pad
 .sticker .sbc i{display:inline-block;background:#000;height:100%}
 .sticker .sbc span{display:inline-block;background:#fff;height:100%}
 .sticker .sbcv{font-size:16px;font-weight:700;letter-spacing:3px;text-align:center;margin-top:3px;font-family:'Courier New',monospace}
+/* Wide-label 2-column layout (Address, Large Address, Return Address) */
+.sticker-inner.wide{width:820px;display:flex;flex-direction:column;gap:16px}
+.sticker-inner.wide .wide-row{display:flex;align-items:stretch;gap:32px}
+.sticker-inner.wide .col-main{flex:1;min-width:0}
+.sticker-inner.wide .vdiv{width:2px;background:#000;opacity:.13;flex:none}
+.sticker-inner.wide .col-side{display:flex;flex-direction:column;justify-content:center;gap:18px;white-space:nowrap;flex:none}
+.sticker .poline{font-size:23px;font-weight:800;margin-top:4px}
+.sticker .poline i{font-style:normal;color:#8a8a8a;font-size:14px;font-weight:700;letter-spacing:.06em;margin-right:7px;text-transform:uppercase}
+.sticker .kvb{display:flex;flex-direction:column;gap:3px}
+.sticker .kvb i{font-style:normal;font-weight:700;color:#8a8a8a;font-size:15px;letter-spacing:.06em;text-transform:uppercase}
+.sticker .kvb b{font-size:38px;font-weight:800;line-height:1}
+/* Real DYMO render image — shown at native size so it's crisp, never upscaled */
+.dymo-img{max-width:100%;height:auto;image-rendering:auto;background:#fff;border-radius:4px;box-shadow:0 2px 10px rgba(0,0,0,.16);display:block;margin:0 auto}
+.print-truth{text-align:center;font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.05em;margin-top:8px}
 
 .print-status{display:flex;align-items:center;gap:9px;padding:11px 14px;border-radius:10px;font-weight:600;font-size:13px;cursor:pointer;transition:var(--ease) .15s}
 .print-status.ok{background:var(--green-soft);color:#0f7a37;border:1px solid #bfe6cd}
@@ -288,19 +302,7 @@ kbd{background:var(--canvas-mute);border:1px solid var(--line);border-bottom-wid
       <div class="hd">Print settings</div>
       <div class="bd setbd">
         <div class="set"><label>Label size</label><select id="labelSel"></select></div>
-        <div class="set row">
-          <label class="chk"><input type="checkbox" id="bcOn"> <span>Add barcode</span></label>
-          <select id="bcField"><option value="heat">Heat #</option><option value="po">PO #</option></select>
-        </div>
         <div class="set row"><label>Copies</label><input type="number" id="copies" min="1" max="50" value="1"></div>
-      </div>
-    </div>
-    <div class="card">
-      <div class="hd">How it works</div>
-      <div class="bd howto">
-        A cert packet is approved → it appears in <b>Ready to Print</b> instantly. Pick the
-        ones you need, hit <kbd>Print</kbd>, and they print on <b>this computer's</b> DYMO.
-        Printed certs move to <b>History</b>, where you can search and reprint any past label.
       </div>
     </div>
   </aside>
@@ -370,7 +372,7 @@ const CONFIG = {
     { key:"shipping",     name:"Shipping (30256)",             id:"Shipping",     paperName:"30256 Shipping",           dw:3331, dh:5760 },
     { key:"returnaddress",name:"Return Address (30330)",       id:"ReturnAddress",paperName:"30330 Return Address",     dw:1080, dh:2880 },
   ],
-  defaultLabelKey: "mp30334",
+  defaultLabelKey: "largeaddress",   // renders wide (the multipurpose renders portrait)
 };
 
 /* ========================= DEMO DATA ========================= */
@@ -445,6 +447,10 @@ async function checkDymo(){
     }else{ sel.style.display="none"; printerName=null; dymoOk=false; dymoState="noprinter"; }
   }catch(e){ sel.style.display="none"; printerName=null; dymoOk=false; dymoReachable=false; dymoState="off"; }
   paintDymo();
+  // Once the DYMO service is reachable, upgrade the side preview from the HTML
+  // representation to the real DYMO render (only if it isn't already showing one).
+  const ph=document.getElementById("preview");
+  if(dymoReachable && previewRec && ph && !ph.querySelector("img")) renderSticker(ph, previewRec);
 }
 function paintDymo(){
   const t=DYMO_TEXT[dymoState];
@@ -482,7 +488,9 @@ function printLines(rec){
 // Uses the selected label size; optionally adds a Code128 barcode (heat or PO).
 // In landscape the printable box is dh wide × dw tall (twips).
 function textObjectXml(str, bx, by, bw, bh, valign){
-  return `<ObjectInfo><TextObject><Name>CERT</Name><ForeColor Alpha="255" Red="0" Green="0" Blue="0" /><BackColor Alpha="0" Red="255" Green="255" Blue="255" /><LinkedObjectName /><Rotation>Rotation0</Rotation><IsMirrored>False</IsMirrored><IsVariable>True</IsVariable><HorizontalAlignment>Left</HorizontalAlignment><VerticalAlignment>${valign}</VerticalAlignment><TextFitMode>ShrinkToFit</TextFitMode><UseFullFontHeight>True</UseFullFontHeight><Verticalized>False</Verticalized><StyledText><Element><String>${str}</String><Attributes><Font Family="Arial" Size="12" Bold="True" Italic="False" Underline="False" Strikeout="False" /><ForeColor Alpha="255" Red="0" Green="0" Blue="0" /></Attributes></Element></StyledText></TextObject><Bounds X="${bx}" Y="${by}" Width="${bw}" Height="${bh}" /></ObjectInfo>`;
+  // AlwaysFit = text grows/shrinks to fill the bounds, so the info fills whatever
+  // label shape is loaded (validated against the live DYMO service).
+  return `<ObjectInfo><TextObject><Name>CERT</Name><ForeColor Alpha="255" Red="0" Green="0" Blue="0" /><BackColor Alpha="0" Red="255" Green="255" Blue="255" /><LinkedObjectName /><Rotation>Rotation0</Rotation><IsMirrored>False</IsMirrored><IsVariable>True</IsVariable><HorizontalAlignment>Left</HorizontalAlignment><VerticalAlignment>${valign}</VerticalAlignment><TextFitMode>AlwaysFit</TextFitMode><UseFullFontHeight>True</UseFullFontHeight><Verticalized>False</Verticalized><StyledText><Element><String>${str}</String><Attributes><Font Family="Arial" Size="12" Bold="True" Italic="False" Underline="False" Strikeout="False" /><ForeColor Alpha="255" Red="0" Green="0" Blue="0" /></Attributes></Element></StyledText></TextObject><Bounds X="${bx}" Y="${by}" Width="${bw}" Height="${bh}" /></ObjectInfo>`;
 }
 function barcodeObjectXml(text, bx, by, bw, bh){
   return `<ObjectInfo><BarcodeObject><Name>BC</Name><ForeColor Alpha="255" Red="0" Green="0" Blue="0" /><BackColor Alpha="0" Red="255" Green="255" Blue="255" /><LinkedObjectName /><Rotation>Rotation0</Rotation><IsMirrored>False</IsMirrored><IsVariable>False</IsVariable><Text>${esc(text)}</Text><Type>Code128Auto</Type><Size>Small</Size><TextPosition>None</TextPosition><TextFont Family="Arial" Size="8" Bold="False" Italic="False" Underline="False" Strikeout="False" /><CheckSumFont Family="Arial" Size="8" Bold="False" Italic="False" Underline="False" Strikeout="False" /><TextEmbedding>None</TextEmbedding><ECLevel>0</ECLevel><HorizontalAlignment>Left</HorizontalAlignment><QuietZonesPadding Left="0" Top="0" Right="0" Bottom="0" /></BarcodeObject><Bounds X="${bx}" Y="${by}" Width="${bw}" Height="${bh}" /></ObjectInfo>`;
@@ -620,13 +628,36 @@ function barcodeBars(val){
   }
   return h;
 }
+// Layout adapts to the label's shape so the info fills the label instead of
+// floating in empty space: wide labels get a 2-column layout, tag-shaped labels
+// get the stacked layout.
 function stickerHtml(rec){
   const f=fields(rec);
+  const L=currentLabel(), aspect=L.dh/L.dw;          // landscape width/height
   const matLine=[f.material,f.spec].filter(Boolean).join("  ·  ");
   const headline = f.part || (f.po?`PO ${f.po}`:"—");
-  const showPo = f.part && f.po;   // only show the PO chip when part is the headline
+  const showPo = f.part && f.po;
   const bcVal = barcodeField==="po"?f.po:f.heat;
   const showBc = barcodeOn && bcVal;
+  const bc = showBc?`<div class="sbc">${barcodeBars(bcVal)}</div><div class="sbcv">${esc(bcVal)}</div>`:"";
+
+  if(aspect>=2.3){   // WIDE labels (Address, Large Address, Return Address): 2 columns
+    return `<div class="sticker"><div class="sticker-inner wide">`+
+      `<div class="wide-row">`+
+        `<div class="col-main">`+
+          `<div class="big">${esc(headline)}</div>`+
+          `${showPo?`<div class="poline"><i>PO</i>${esc(f.po)}</div>`:""}`+
+          `${matLine?`<div class="smat">${esc(matLine)}</div>`:""}`+
+          `${f.size?`<div class="ssize">${esc(f.size)}</div>`:""}`+
+        `</div>`+
+        `${(f.heat||f.qty)?`<div class="vdiv"></div><div class="col-side">`+
+          `${f.heat?`<div class="kvb"><i>Heat</i><b>${esc(f.heat)}</b></div>`:""}`+
+          `${f.qty?`<div class="kvb"><i>Qty</i><b>${esc(f.qty)}</b></div>`:""}`+
+        `</div>`:""}`+
+      `</div>${bc}`+
+    `</div></div>`;
+  }
+  // TAG-shaped labels (Multipurpose, Shipping): stacked zones
   return `<div class="sticker"><div class="sticker-inner">`+
     `<div class="srow"><span class="big">${esc(headline)}</span>`+
       `${showPo?`<span class="kv"><i>PO</i>${esc(f.po)}</span>`:""}</div>`+
@@ -637,7 +668,7 @@ function stickerHtml(rec){
     `${(f.heat||f.qty)?`<div class="srow">`+
       `${f.heat?`<span class="kv"><i>Heat</i>${esc(f.heat)}</span>`:"<span></span>"}`+
       `${f.qty?`<span class="kv"><i>Qty</i>${esc(f.qty)}</span>`:""}</div>`:""}`+
-    `${showBc?`<div class="sbc">${barcodeBars(bcVal)}</div><div class="sbcv">${esc(bcVal)}</div>`:""}`+
+    `${bc}`+
     `</div></div>`;
 }
 // Size the label box to the selected label's aspect ratio, then scale the inner
@@ -653,11 +684,27 @@ function fitSticker(box){
   const s=Math.min((w-padPx*2)/inner.offsetWidth, (sticker.clientHeight-padPx*2)/inner.offsetHeight);
   inner.style.transform=`translate(-50%,-50%) scale(${s})`;
 }
-function showPreview(rec){
-  previewRec=rec;
-  const stage=document.getElementById("stage"), host=document.getElementById("preview");
+// Render a sticker into a host: instant HTML representation, then swap in the REAL
+// DYMO render (what actually prints) once the service responds. Debounced + guarded
+// per host so rapid edits/hovers don't pile up requests.
+function renderSticker(host, rec){
   host.innerHTML=stickerHtml(rec);
   requestAnimationFrame(()=>fitSticker(host));
+  if(!dymoReachable) return;
+  clearTimeout(host._t);
+  const seq=(host._seq=(host._seq||0)+1);
+  host._t=setTimeout(async()=>{
+    try{
+      const url=await renderViaDymo(rec);
+      if(host._seq!==seq) return;
+      host.innerHTML=`<img class="dymo-img" src="${url}" alt="DYMO label output"><div class="print-truth">✓ exactly what prints</div>`;
+    }catch(e){ /* keep the HTML representation */ }
+  },220);
+}
+function showPreview(rec){
+  previewRec=rec;
+  const stage=document.getElementById("stage");
+  renderSticker(document.getElementById("preview"), rec);
   stage.onclick=()=>openModal(rec);
 }
 // Editable fields shown in the modal (key, label, full-width?).
@@ -668,10 +715,8 @@ const EDIT_FIELDS=[
 ];
 let editDirty=false;
 function renderModalSticker(){
-  // Sharp, vector HTML preview, auto-fit to the selected label shape.
-  const host=document.getElementById("modalSticker");
-  host.innerHTML=stickerHtml(modalRec);
-  requestAnimationFrame(()=>fitSticker(host));
+  // The modal shows the REAL DYMO render — what you see is exactly what prints.
+  renderSticker(document.getElementById("modalSticker"), modalRec);
 }
 function openModal(rec){
   modalRec=JSON.parse(JSON.stringify(rec));   // working copy — edits don't touch the list until saved
@@ -754,8 +799,6 @@ selLabelKey=CONFIG.defaultLabelKey;
   ls.value=selLabelKey;
   const refresh=()=>{ if(previewRec) showPreview(previewRec); if(modalRec) renderModalSticker(); };
   ls.onchange=()=>{ selLabelKey=ls.value; refresh(); };
-  document.getElementById("bcOn").onchange=e=>{ barcodeOn=e.target.checked; refresh(); };
-  document.getElementById("bcField").onchange=e=>{ barcodeField=e.target.value; refresh(); };
   document.getElementById("copies").onchange=e=>{ copies=Math.max(1,Math.min(50,parseInt(e.target.value)||1)); e.target.value=copies; };
 })();
 
