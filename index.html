@@ -41,11 +41,9 @@ header{
   display:flex; align-items:center; gap:16px; padding:0 24px; height:60px;
   background:var(--surf); border-bottom:1px solid var(--line); flex:none; box-shadow:var(--sh-sm); z-index:30;
 }
-.logo{display:flex;align-items:center;gap:11px}
-.logo .mark{
-  width:38px;height:38px;border-radius:9px;display:grid;place-items:center;color:#fff;font-weight:900;font-size:14px;letter-spacing:.5px;
-  background:linear-gradient(135deg,var(--primary),var(--accent)); box-shadow:0 3px 10px rgba(27,79,168,.35);
-}
+.logo{display:flex;align-items:center;gap:13px}
+.logo .mrglogo{height:40px;width:auto;display:block}
+.logo .logo-div{width:1px;height:30px;background:var(--line)}
 .logo .txt b{font-size:15px;font-weight:800;letter-spacing:-.2px;display:block;line-height:1.1}
 .logo .txt span{font-size:11.5px;color:var(--ink3);font-weight:600}
 
@@ -258,8 +256,16 @@ kbd{background:var(--canvas-mute);border:1px solid var(--line);border-bottom-wid
 
 <header>
   <div class="logo">
-    <div class="mark">MRG</div>
-    <div class="txt"><b>Cert Label Station</b><span>MRG Tool &amp; Die</span></div>
+    <svg class="mrglogo" viewBox="0 0 104 80" fill="none" aria-label="MRG Tool and Die">
+      <line x1="3" y1="14" x2="101" y2="14" stroke="#0F4FAF" stroke-width="1.6"/>
+      <line x1="3" y1="66" x2="101" y2="66" stroke="#0F4FAF" stroke-width="1.6"/>
+      <path d="M 4 14 L 4 66" stroke="#0F4FAF" stroke-width="1.6"/>
+      <path d="M 100 14 L 100 66" stroke="#0F4FAF" stroke-width="1.6"/>
+      <text x="14" y="47" font-family="Arial Black, Arial, sans-serif" font-weight="900" font-size="27" fill="#0F4FAF" letter-spacing="2">MRG</text>
+      <text x="15" y="61" font-family="Arial, sans-serif" font-weight="700" font-size="8.5" fill="#0F4FAF" letter-spacing="2.5">TOOL AND DIE</text>
+    </svg>
+    <div class="logo-div"></div>
+    <div class="txt"><b>Cert Label Station</b></div>
   </div>
   <div class="dymo-pill" id="dymoPill" title="Click to re-check / allow DYMO access">
     <span class="dot"></span>
@@ -303,6 +309,7 @@ kbd{background:var(--canvas-mute);border:1px solid var(--line);border-bottom-wid
     <div class="card">
       <div class="hd">Print settings</div>
       <div class="bd setbd">
+        <div class="set"><label>Template</label><select id="tplSel"></select></div>
         <div class="set"><label>Label size</label><select id="labelSel"></select></div>
         <div class="set row"><label>Copies per piece</label><input type="number" id="copies" min="1" max="50" value="1"></div>
         <div class="set-hint">Prints one label per piece (QTY) by default.</div>
@@ -388,7 +395,7 @@ const DEMO = [
 
 /* ========================= STATE ========================= */
 let RECORDS=[], view="ready", selected=new Set(), printerName=null, dymoOk=false, dymoReachable=false, modalRec=null, knownIds=new Set(), liveData=false;
-let selLabelKey=null, barcodeOn=false, barcodeField="heat", copies=1, previewRec=null;
+let selLabelKey=null, barcodeOn=false, barcodeField="heat", copies=1, previewRec=null, templateKey="standard";
 function currentLabel(){ return CONFIG.labelTypes.find(l=>l.key===(selLabelKey||CONFIG.defaultLabelKey)) || CONFIG.labelTypes[0]; }
 
 /* ========================= DATA ========================= */
@@ -483,26 +490,31 @@ function printLines(rec){
     [f.heat?`HEAT ${f.heat}`:"", f.qty?`QTY ${f.qty}`:""].filter(Boolean).join("      "),
   ].filter(Boolean);
 }
-// DYMO Connect "DesktopLabel" generator — the format the service REQUIRES when a
-// printer is connected (the legacy DieCutLabel only passed with no printer). One
-// AlwaysFit text block sized to the whole label, so the info fills it. Validated
-// live: RenderLabel + PrintLabel both 200 with a printer connected.
-// ---- The designed label, drawn on a 300-DPI canvas ----------------------------
-// This SAME image is shown as the preview AND embedded in the DYMO label as an
-// ImageObject, so the print is pixel-identical to the preview, looks designed,
-// and fills the whole label (DYMO's plain auto-fit text can't do this).
+// ---- Label templates (different ways the cert is written out) -----------------
+// Each draws a designed sticker on a 300-DPI canvas. The SAME image is the preview
+// AND is embedded in the DYMO label (ImageObject), so print == preview exactly.
+const TEMPLATES = [
+  { key:"standard", name:"Standard", draw:tplStandard },
+  { key:"heat",     name:"Heat-first", draw:tplHeat },
+  { key:"compact",  name:"Compact", draw:tplCompact },
+];
+function currentTemplate(){ return TEMPLATES.find(t=>t.key===templateKey) || TEMPLATES[0]; }
 function drawStickerCanvas(rec){
   const L=currentLabel(), DPI=300;
   const W=Math.round(L.wIn*DPI), H=Math.round(L.hIn*DPI);
   const cv=document.createElement("canvas"); cv.width=W; cv.height=H;
   const x=cv.getContext("2d");
   x.fillStyle="#fff"; x.fillRect(0,0,W,H);
-  const f=fields(rec), A="Arial";
-  const pad=Math.round(H*0.10), cw=W-pad*2;
+  const f=fields(rec), A="Arial", pad=Math.round(H*0.10), cw=W-pad*2;
+  const wrap=(text,font,maxW)=>{ x.font=font; const words=String(text).split(/\s+/),out=[]; let cur="";
+    for(const w of words){ const t=cur?cur+" "+w:w; if(x.measureText(t).width>maxW&&cur){out.push(cur);cur=w;}else cur=t;} if(cur)out.push(cur); return out; };
+  try{ currentTemplate().draw({x,W,H,f,A,pad,cw,wrap}); }catch(e){ tplStandard({x,W,H,f,A,pad,cw,wrap}); }
+  return cv.toDataURL("image/png");
+}
+// Standard: part/PO header · rule · material/spec/size · rule · HEAT + QTY footer
+function tplStandard({x,W,H,f,A,pad,cw,wrap}){
   const headline=f.part||(f.po?("PO "+f.po):"—");
   const matLine=[f.material,f.spec].filter(Boolean).join("   ·   ");
-  function wrap(text,font,maxW){ x.font=font; const words=String(text).split(/\s+/),out=[]; let cur="";
-    for(const w of words){ const t=cur?cur+" "+w:w; if(x.measureText(t).width>maxW&&cur){out.push(cur);cur=w;}else cur=t;} if(cur)out.push(cur); return out; }
   let fH=H*0.215, fB=H*0.15, fS=H*0.13, fK=H*0.20, fL=H*0.085, rule=Math.max(2,Math.round(H*0.012)), gap=H*0.055;
   const matLines=matLine?wrap(matLine,`bold ${fB}px ${A}`,cw):[];
   const sizeLines=f.size?wrap(f.size,`600 ${fS}px ${A}`,cw):[];
@@ -511,12 +523,10 @@ function drawStickerCanvas(rec){
   const avail=H-pad*2, sc=total()>avail?avail/total():1;
   fH*=sc; fB*=sc; fS*=sc; fK*=sc; fL*=sc; gap*=sc;
   let y=pad+Math.max(0,(avail-total())/2);
-  x.textBaseline="top";
-  x.fillStyle="#000"; x.textAlign="left"; x.font=`800 ${fH}px ${A}`;
+  x.textBaseline="top"; x.fillStyle="#000"; x.textAlign="left"; x.font=`800 ${fH}px ${A}`;
   x.fillText(headline,pad,y);
   if(f.part&&f.po){ x.textAlign="right"; x.font=`800 ${fH*0.78}px ${A}`; x.fillText("PO "+f.po,W-pad,y+fH*0.16); x.textAlign="left"; }
-  y+=fH+gap;
-  x.fillStyle="#000"; x.fillRect(pad,y,cw,rule); y+=rule+gap;
+  y+=fH+gap; x.fillStyle="#000"; x.fillRect(pad,y,cw,rule); y+=rule+gap;
   x.font=`bold ${fB}px ${A}`; x.fillStyle="#000";
   for(const ln of matLines){ x.fillText(ln,pad,y); y+=fB*1.16; }
   x.font=`600 ${fS}px ${A}`; x.fillStyle="#222";
@@ -530,7 +540,47 @@ function drawStickerCanvas(rec){
       const qw=x.measureText(f.qty).width; x.font=`600 ${fL}px ${A}`; x.fillStyle="#777"; x.fillText("QTY  ",W-pad-qw,base); }
     x.textBaseline="top";
   }
-  return cv.toDataURL("image/png");
+}
+// Heat-first: the heat number is the hero (the traceability anchor)
+function tplHeat({x,W,H,f,A,pad,cw,wrap}){
+  const top=[f.part, f.po?("PO "+f.po):""].filter(Boolean).join("     ");
+  const matLine=[f.material,f.spec,f.size].filter(Boolean).join("  ·  ");
+  let fTop=H*0.135, fLbl=H*0.095, fHeat=H*0.30, fMat=H*0.115, fQ=H*0.155, rule=Math.max(2,Math.round(H*0.012)), gap=H*0.05;
+  const matLines=matLine?wrap(matLine,`bold ${fMat}px ${A}`,cw):[];
+  const total=()=> (top?fTop+gap:0) + rule+gap + (fLbl*1.05+fHeat) + gap+rule+gap + matLines.length*fMat*1.16;
+  const avail=H-pad*2, sc=total()>avail?avail/total():1;
+  fTop*=sc; fLbl*=sc; fHeat*=sc; fMat*=sc; fQ*=sc; gap*=sc;
+  let y=pad+Math.max(0,(avail-total())/2);
+  x.textBaseline="top"; x.textAlign="left"; x.fillStyle="#000";
+  if(top){ x.font=`700 ${fTop}px ${A}`; x.fillText(top,pad,y); y+=fTop+gap; }
+  x.fillStyle="#000"; x.fillRect(pad,y,cw,rule); y+=rule+gap;
+  x.font=`700 ${fLbl}px ${A}`; x.fillStyle="#777"; x.fillText("HEAT",pad,y);
+  x.font=`900 ${fHeat}px ${A}`; x.fillStyle="#000"; x.fillText(f.heat||"—",pad,y+fLbl*1.05);
+  y+=fLbl*1.05+fHeat+gap;
+  x.fillStyle="#000"; x.fillRect(pad,y,cw,rule); y+=rule+gap;
+  x.font=`bold ${fMat}px ${A}`; x.fillStyle="#000"; x.textAlign="left";
+  matLines.forEach((ln,i)=>x.fillText(ln,pad,y+i*fMat*1.16));
+  if(f.qty){ x.textAlign="right"; x.font=`900 ${fQ}px ${A}`; x.fillStyle="#000"; x.fillText("QTY "+f.qty,W-pad,y); x.textAlign="left"; }
+}
+// Compact: dense 4-line layout, no rules (closest to the original sticker)
+function tplCompact({x,W,H,f,A,pad,cw,wrap}){
+  const rows=[
+    [f.part, f.po?("PO "+f.po):""].filter(Boolean).join("    "),
+    [f.material,f.spec].filter(Boolean).join("  ·  "),
+    f.size,
+    [f.heat?("HEAT "+f.heat):"", f.qty?("QTY "+f.qty):""].filter(Boolean).join("    "),
+  ].filter(Boolean);
+  // find the largest font where every row fits the width and all rows fit the height
+  let fs=H*0.5; const lh=1.2;
+  for(; fs>8; fs-=2){
+    x.font=`bold ${fs}px ${A}`;
+    const fits = rows.every(r=>x.measureText(r).width<=cw) && rows.length*fs*lh<=(H-pad*2);
+    if(fits) break;
+  }
+  const totalH=rows.length*fs*lh;
+  let y=pad+Math.max(0,((H-pad*2)-totalH)/2);
+  x.textBaseline="top"; x.textAlign="left"; x.fillStyle="#000"; x.font=`bold ${fs}px ${A}`;
+  for(const r of rows){ x.fillText(r,pad,y); y+=fs*lh; }
 }
 function buildLabelXml(rec){
   const L=currentLabel();
@@ -809,13 +859,18 @@ document.addEventListener("visibilitychange",()=>{if(!document.hidden)checkDymo(
 function lsGet(k,d){ try{ const v=localStorage.getItem(k); return v==null?d:v; }catch(e){ return d; } }
 function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
 selLabelKey = (CONFIG.labelTypes.some(l=>l.key===lsGet("cl_label")) ? lsGet("cl_label") : CONFIG.defaultLabelKey);
+templateKey = (TEMPLATES.some(t=>t.key===lsGet("cl_tpl")) ? lsGet("cl_tpl") : "standard");
 copies = Math.max(1, Math.min(50, parseInt(lsGet("cl_copies","1"))||1));
 (function initSettings(){
+  const tpl=document.getElementById("tplSel");
+  tpl.innerHTML=TEMPLATES.map(t=>`<option value="${t.key}">${esc(t.name)}</option>`).join("");
+  tpl.value=templateKey;
   const ls=document.getElementById("labelSel");
   ls.innerHTML=CONFIG.labelTypes.map(l=>`<option value="${l.key}">${esc(l.name)}</option>`).join("");
   ls.value=selLabelKey;
   document.getElementById("copies").value=copies;
   const refresh=()=>{ if(previewRec) showPreview(previewRec); if(modalRec) renderModalSticker(); updateActionBar(); };
+  tpl.onchange=()=>{ templateKey=tpl.value; lsSet("cl_tpl",templateKey); refresh(); };
   ls.onchange=()=>{ selLabelKey=ls.value; lsSet("cl_label",selLabelKey); refresh(); };
   document.getElementById("copies").onchange=e=>{ copies=Math.max(1,Math.min(50,parseInt(e.target.value)||1)); e.target.value=copies; lsSet("cl_copies",String(copies)); refresh(); };
 })();
