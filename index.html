@@ -7,6 +7,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap">
+<!-- Barcode + QR generators (drawn onto the label canvas, then printed as image) -->
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <style>
 :root{
   --f:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
@@ -177,6 +180,20 @@ aside{display:flex;flex-direction:column;gap:14px;min-height:0;overflow:auto;pad
 .set select,.set input[type=number]{border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-weight:600;color:var(--ink);background:var(--surf)}
 .set input[type=number]{width:72px}
 .set-hint{font-size:11.5px;color:var(--ink3);margin-top:-4px}
+.te-edit{margin-top:8px;width:100%;border:1px dashed var(--line-strong);background:var(--canvas-mute);color:var(--primary);border-radius:8px;padding:8px;font-weight:700;font-size:12.5px;cursor:pointer}
+.te-edit:hover{border-color:var(--primary);background:var(--primary-soft)}
+.te-label{font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
+.te-hint{font-size:11px;color:var(--ink3);font-weight:600;text-transform:none;letter-spacing:0}
+.te-blocks{display:flex;flex-direction:column;gap:6px;min-height:40px}
+.te-block{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surf);font-weight:600;font-size:13px}
+.te-block .nm{flex:1}
+.te-block button{border:none;background:var(--canvas-mute);width:26px;height:26px;border-radius:6px;cursor:pointer;color:var(--ink2);font-size:13px;font-weight:700}
+.te-block button:hover{background:var(--line)}
+.te-block button.rm:hover{background:var(--red-soft);color:var(--red)}
+.te-palette{display:flex;flex-wrap:wrap;gap:6px}
+.te-palette button{border:1px solid var(--line);background:var(--surf);border-radius:var(--r-pill);padding:6px 12px;font-size:12px;font-weight:600;color:var(--ink);cursor:pointer}
+.te-palette button:hover{border-color:var(--primary);color:var(--primary);background:var(--primary-soft)}
+.te-side .sticker-stage{cursor:default}
 .set .chk{display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:13px;color:var(--ink);font-weight:600}
 .set .chk input{width:17px;height:17px;accent-color:var(--primary)}
 .howto{color:var(--ink2);font-size:12.5px;line-height:1.65}
@@ -309,7 +326,8 @@ kbd{background:var(--canvas-mute);border:1px solid var(--line);border-bottom-wid
     <div class="card">
       <div class="hd">Print settings</div>
       <div class="bd setbd">
-        <div class="set"><label>Template</label><select id="tplSel"></select></div>
+        <div class="set"><label>Template</label><select id="tplSel"></select>
+          <button class="te-edit" id="tplEditBtn">✎ Build / edit templates</button></div>
         <div class="set"><label>Label size</label><select id="labelSel"></select></div>
         <div class="set row"><label>Copies per piece</label><input type="number" id="copies" min="1" max="50" value="1"></div>
         <div class="set-hint">Prints one label per piece (QTY) by default.</div>
@@ -351,6 +369,33 @@ kbd{background:var(--canvas-mute);border:1px solid var(--line);border-bottom-wid
       <span class="grow"></span>
       <button class="btn-ghost" id="modalClose2">Close</button>
       <button class="btn-print" id="modalPrint">🖨 Print this sticker</button>
+    </div>
+  </div>
+</div>
+
+<!-- Template builder -->
+<div class="overlay" id="tplOverlay">
+  <div class="modal" style="max-width:900px">
+    <div class="mh"><b id="tplTitle">Template builder</b><button class="x" id="tplX">✕</button></div>
+    <div class="mb" style="display:grid;grid-template-columns:1fr 340px;gap:24px">
+      <div>
+        <div class="set"><label>Template name</label><input id="tplName" type="text" placeholder="e.g. Bar tag with QR"></div>
+        <div class="te-label">Blocks — top to bottom <span id="tplEmpty" class="te-hint">add blocks below →</span></div>
+        <div id="tplBlocks" class="te-blocks"></div>
+        <div class="te-label" style="margin-top:14px">Add a block</div>
+        <div id="tplPalette" class="te-palette"></div>
+      </div>
+      <div class="te-side">
+        <div class="te-label">Live preview</div>
+        <div class="sticker-stage" id="tplStage" style="cursor:default"><div id="tplPreview"></div></div>
+        <div class="te-hint" style="margin-top:8px">Uses the selected label size. This is exactly what prints.</div>
+      </div>
+    </div>
+    <div class="mf">
+      <button class="btn-ghost" id="tplDelete" style="display:none;color:var(--red);border-color:#f3c9ce">Delete</button>
+      <span class="grow"></span>
+      <button class="btn-ghost" id="tplCancel">Cancel</button>
+      <button class="btn-print" id="tplSave">Save template</button>
     </div>
   </div>
 </div>
@@ -498,8 +543,103 @@ const TEMPLATES = [
   { key:"heat",     name:"Heat-first", draw:tplHeat },
   { key:"compact",  name:"Compact", draw:tplCompact },
 ];
-function currentTemplate(){ return TEMPLATES.find(t=>t.key===templateKey) || TEMPLATES[0]; }
-function drawStickerCanvas(rec){
+// ---- Custom templates: arrange "blocks" in any order, save your own -----------
+// Each block maps to a row spec; drawRows() renders the list with auto-fit.
+const BLOCKS = {
+  partpo:   { name:"Part / Job + PO",   row:{type:"text", field:"part", size:"lg", secondary:"po"} },
+  part:     { name:"Part / Job",        row:{type:"text", field:"part", size:"lg"} },
+  po:       { name:"PO #",              row:{type:"text", field:"po", size:"md", label:true} },
+  material: { name:"Material + Spec",   row:{type:"text", field:"matspec", size:"md"} },
+  materialOnly:{ name:"Material only",  row:{type:"text", field:"material", size:"md"} },
+  spec:     { name:"Spec",              row:{type:"text", field:"spec", size:"sm"} },
+  size:     { name:"Size",              row:{type:"text", field:"size", size:"md"} },
+  heatbig:  { name:"Heat # (big)",      row:{type:"text", field:"heat", size:"xl", label:true} },
+  heatqty:  { name:"Heat # + Qty row",  row:{type:"pair", left:"heat", right:"qty", size:"lg", labels:true} },
+  qty:      { name:"Qty (big)",         row:{type:"text", field:"qty", size:"lg", label:true} },
+  supplier: { name:"Supplier",          row:{type:"text", field:"supplier", size:"sm"} },
+  divider:  { name:"── Divider ──",     row:{type:"divider"} },
+  barcodeHeat:{ name:"Barcode — Heat #", row:{type:"barcode", raw:"heat"} },
+  barcodePO:{ name:"Barcode — PO #",    row:{type:"barcode", raw:"po"} },
+  qrHeat:   { name:"QR code — Heat #",  row:{type:"qr", raw:"heat"} },
+  qrAll:    { name:"QR code — full info", row:{type:"qr", raw:"all"} },
+};
+function rawGet(f,key){
+  if(key==="all") return [f.part&&("Part "+f.part), f.po&&("PO "+f.po), f.material, f.spec, f.size, f.heat&&("Heat "+f.heat), f.qty&&("Qty "+f.qty)].filter(Boolean).join(" | ");
+  return {heat:f.heat, po:f.po, part:f.part, material:f.material, spec:f.spec, size:f.size, qty:f.qty}[key] || "";
+}
+function makeBarcodeCanvas(value){
+  if(typeof JsBarcode==="undefined" || !value) return null;
+  try{ const c=document.createElement("canvas"); JsBarcode(c, String(value), {format:"CODE128", displayValue:true, fontSize:30, font:"Arial", height:90, margin:4, textMargin:2}); return c; }catch(e){ return null; }
+}
+function drawQR(x, value, dx, dy, size){
+  if(typeof qrcode==="undefined" || !value) return;
+  try{ const qr=qrcode(0,"M"); qr.addData(String(value)); qr.make(); const n=qr.getModuleCount(), cell=size/n;
+    x.fillStyle="#000"; for(let r=0;r<n;r++)for(let c=0;c<n;c++){ if(qr.isDark(r,c)) x.fillRect(Math.floor(dx+c*cell),Math.floor(dy+r*cell),Math.ceil(cell),Math.ceil(cell)); }
+  }catch(e){}
+}
+const TPL_FIELDS = {
+  part:{label:"PART", get:f=>f.part}, po:{label:"PO", get:f=>f.po?("PO "+f.po):""},
+  material:{label:"MATERIAL", get:f=>f.material}, spec:{label:"SPEC", get:f=>f.spec},
+  size:{label:"SIZE", get:f=>f.size}, heat:{label:"HEAT", get:f=>f.heat},
+  qty:{label:"QTY", get:f=>f.qty}, supplier:{label:"SUPPLIER", get:f=>f.supplier},
+  matspec:{label:"MATERIAL", get:f=>[f.material,f.spec].filter(Boolean).join("   ·   ")},
+};
+const TPL_SIZES = { xl:0.30, lg:0.205, md:0.15, sm:0.115 };
+function drawRows(g, rows){
+  const {x,W,H,f,A,pad,cw,wrap}=g;
+  const SZ=k=>H*(TPL_SIZES[k]||TPL_SIZES.md);
+  const items=[]; let maxW=0;
+  for(const r of rows){
+    if(r.type==="divider"){ items.push({kind:"divider"}); continue; }
+    if(r.type==="barcode"){ const v=rawGet(f,r.raw); if(!v) continue; items.push({kind:"barcode", h:H*0.24, value:v}); continue; }
+    if(r.type==="qr"){ const v=rawGet(f,r.raw); if(!v) continue; items.push({kind:"qr", h:H*0.5, value:v}); continue; }
+    if(r.type==="pair"){
+      const lf=TPL_FIELDS[r.left], rf=TPL_FIELDS[r.right], lv=lf?lf.get(f):"", rv=rf?rf.get(f):"";
+      if(!lv&&!rv) continue;
+      const sz=SZ(r.size||"lg");
+      x.font=`800 ${sz}px ${A}`;
+      const w=(r.labels&&lf?x.measureText(lf.label+"  ").width:0)+x.measureText(lv).width+(r.labels&&rf?x.measureText("  "+rf.label).width:0)+x.measureText(rv).width+H*0.12;
+      maxW=Math.max(maxW,w);
+      items.push({kind:"pair",sz,lLabel:r.labels&&lf?lf.label:"",lVal:lv,rLabel:r.labels&&rf?rf.label:"",rVal:rv});
+      continue;
+    }
+    const fd=TPL_FIELDS[r.field], val=fd?fd.get(f):""; if(!val) continue;
+    const sz=SZ(r.size||"md"), lines=wrap(val,`bold ${sz}px ${A}`,cw);
+    x.font=`bold ${sz}px ${A}`; lines.forEach(ln=>maxW=Math.max(maxW,x.measureText(ln).width));
+    items.push({kind:"text",sz,label:r.label&&fd?fd.label:"",lines,secVal:r.secondary&&TPL_FIELDS[r.secondary]?TPL_FIELDS[r.secondary].get(f):""});
+  }
+  const rule=Math.max(2,Math.round(H*0.012)), gap=H*0.05;
+  const itemH=it=> it.kind==="divider"?rule : it.kind==="barcode"?it.h : it.kind==="qr"?it.h : it.kind==="pair"?it.sz : (it.label?it.sz*0.46:0)+it.lines.length*it.sz*1.16;
+  let total=0; items.forEach((it,i)=>{ total+=itemH(it)+(i?gap:0); });
+  const avail=H-pad*2; let sc=total>0?avail/total:1; if(maxW>0)sc=Math.min(sc,cw/maxW);
+  let y=pad+Math.max(0,(avail-total*sc)/2);
+  x.textBaseline="top";
+  items.forEach((it,i)=>{
+    if(i) y+=gap*sc;
+    if(it.kind==="divider"){ x.fillStyle="#000"; x.fillRect(pad,y,cw,rule); y+=rule; return; }
+    if(it.kind==="barcode"){ const bc=makeBarcodeCanvas(it.value), h=it.h*sc; if(bc){ const w=Math.min(cw, bc.width*(h/bc.height)); x.drawImage(bc,pad+(cw-w)/2,y,w,h); } y+=h; return; }
+    if(it.kind==="qr"){ const s=Math.min(it.h*sc,cw); drawQR(x,it.value,pad,y,s); y+=it.h*sc; return; }
+    const sz=it.sz*sc;
+    if(it.kind==="pair"){
+      x.textBaseline="alphabetic"; const base=y+sz; x.textAlign="left"; let lx=pad;
+      if(it.lLabel){ x.font=`600 ${sz*0.42}px ${A}`; x.fillStyle="#777"; x.fillText(it.lLabel,lx,base); lx+=x.measureText(it.lLabel+"  ").width; }
+      x.font=`800 ${sz}px ${A}`; x.fillStyle="#000"; x.fillText(it.lVal,lx,base);
+      if(it.rVal){ x.textAlign="right"; x.font=`800 ${sz}px ${A}`; x.fillStyle="#000"; x.fillText(it.rVal,W-pad,base);
+        if(it.rLabel){ const rw=x.measureText(it.rVal).width; x.font=`600 ${sz*0.42}px ${A}`; x.fillStyle="#777"; x.fillText(it.rLabel+"  ",W-pad-rw,base); } }
+      x.textBaseline="top"; x.textAlign="left"; y+=sz; return;
+    }
+    if(it.label){ x.font=`600 ${sz*0.42}px ${A}`; x.fillStyle="#777"; x.fillText(it.label,pad,y); y+=sz*0.46; }
+    x.fillStyle="#000"; x.textAlign="left";
+    it.lines.forEach((ln,j)=>{ x.font=`bold ${sz}px ${A}`; x.fillText(ln,pad,y);
+      if(j===0&&it.secVal){ x.textAlign="right"; x.font=`800 ${sz*0.78}px ${A}`; x.fillText(it.secVal,W-pad,y+sz*0.16); x.textAlign="left"; }
+      y+=sz*1.16; });
+  });
+}
+function customTemplates(){ try{ return JSON.parse(localStorage.getItem("cl_custom")||"[]"); }catch(e){ return []; } }
+function saveCustomTemplates(arr){ try{ localStorage.setItem("cl_custom",JSON.stringify(arr)); }catch(e){} }
+function allTemplates(){ return [...TEMPLATES, ...customTemplates().map(t=>({key:t.key,name:t.name+" ★",draw:g=>drawRows(g,t.blocks.map(bk=>BLOCKS[bk]&&BLOCKS[bk].row).filter(Boolean))}))]; }
+function currentTemplate(){ return allTemplates().find(t=>t.key===templateKey) || TEMPLATES[0]; }
+function drawStickerCanvas(rec, rowsOverride){
   const L=currentLabel(), DPI=300;
   const W=Math.round(L.wIn*DPI), H=Math.round(L.hIn*DPI);
   const cv=document.createElement("canvas"); cv.width=W; cv.height=H;
@@ -508,7 +648,7 @@ function drawStickerCanvas(rec){
   const f=fields(rec), A="Arial", pad=Math.round(H*0.10), cw=W-pad*2;
   const wrap=(text,font,maxW)=>{ x.font=font; const words=String(text).split(/\s+/),out=[]; let cur="";
     for(const w of words){ const t=cur?cur+" "+w:w; if(x.measureText(t).width>maxW&&cur){out.push(cur);cur=w;}else cur=t;} if(cur)out.push(cur); return out; };
-  try{ currentTemplate().draw({x,W,H,f,A,pad,cw,wrap}); }catch(e){ tplStandard({x,W,H,f,A,pad,cw,wrap}); }
+  try{ if(rowsOverride) drawRows({x,W,H,f,A,pad,cw,wrap}, rowsOverride); else currentTemplate().draw({x,W,H,f,A,pad,cw,wrap}); }catch(e){ tplStandard({x,W,H,f,A,pad,cw,wrap}); }
   return cv.toDataURL("image/png");
 }
 // Standard: part/PO header · rule · material/spec/size · rule · HEAT + QTY footer
@@ -831,6 +971,63 @@ async function saveEdits(){
 }
 function closeModal(){document.getElementById("overlay").classList.remove("show");modalRec=null;}
 
+/* ===== Template builder ===== */
+let tplEdit=null;
+function refreshTemplatePicker(){
+  const sel=document.getElementById("tplSel");
+  sel.innerHTML=allTemplates().map(t=>`<option value="${t.key}">${esc(t.name)}</option>`).join("");
+  if(!allTemplates().some(t=>t.key===templateKey)) templateKey="standard";
+  sel.value=templateKey;
+}
+function openTemplateEditor(key){
+  const existing=customTemplates().find(t=>t.key===key);
+  tplEdit = existing ? {key:existing.key,name:existing.name,blocks:existing.blocks.slice()}
+                     : {key:null,name:"",blocks:["partpo","divider","material","size","divider","heatqty"]};
+  document.getElementById("tplTitle").textContent=existing?"Edit template":"New template";
+  document.getElementById("tplName").value=tplEdit.name;
+  document.getElementById("tplDelete").style.display=existing?"inline-flex":"none";
+  renderTplEditor();
+  document.getElementById("tplOverlay").classList.add("show");
+}
+function renderTplEditor(){
+  const host=document.getElementById("tplBlocks");
+  document.getElementById("tplEmpty").style.display=tplEdit.blocks.length?"none":"inline";
+  host.innerHTML=tplEdit.blocks.map((bk,i)=>`<div class="te-block"><span class="nm">${esc(BLOCKS[bk]?BLOCKS[bk].name:bk)}</span>`+
+    `<button data-mv="${i}:-1"${i===0?" disabled":""}>↑</button>`+
+    `<button data-mv="${i}:1"${i===tplEdit.blocks.length-1?" disabled":""}>↓</button>`+
+    `<button class="rm" data-rm="${i}">✕</button></div>`).join("");
+  host.querySelectorAll("[data-mv]").forEach(b=>b.onclick=()=>{const p=b.dataset.mv.split(":"),i=+p[0],j=i+ +p[1];if(j<0||j>=tplEdit.blocks.length)return;const a=tplEdit.blocks;[a[i],a[j]]=[a[j],a[i]];renderTplEditor();});
+  host.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{tplEdit.blocks.splice(+b.dataset.rm,1);renderTplEditor();});
+  const pal=document.getElementById("tplPalette");
+  pal.innerHTML=Object.entries(BLOCKS).map(([k,v])=>`<button data-add="${k}">+ ${esc(v.name)}</button>`).join("");
+  pal.querySelectorAll("[data-add]").forEach(b=>b.onclick=()=>{tplEdit.blocks.push(b.dataset.add);renderTplEditor();});
+  const rec=previewRec||DEMO[0];
+  const rows=tplEdit.blocks.map(bk=>BLOCKS[bk]&&BLOCKS[bk].row).filter(Boolean);
+  document.getElementById("tplPreview").innerHTML=`<img class="dymo-img" src="${drawStickerCanvas(rec,rows)}" alt="preview">`;
+}
+function saveTemplate(){
+  if(!tplEdit.blocks.length){ toast("Add at least one block","err"); return; }
+  const name=document.getElementById("tplName").value.trim()||"My template";
+  const custom=customTemplates();
+  if(tplEdit.key){ const t=custom.find(c=>c.key===tplEdit.key); if(t){t.name=name;t.blocks=tplEdit.blocks.slice();} }
+  else { tplEdit.key="c_"+Date.now(); custom.push({key:tplEdit.key,name,blocks:tplEdit.blocks.slice()}); }
+  saveCustomTemplates(custom);
+  templateKey=tplEdit.key; lsSet("cl_tpl",templateKey);
+  refreshTemplatePicker();
+  document.getElementById("tplOverlay").classList.remove("show");
+  if(previewRec) showPreview(previewRec); if(modalRec) renderModalSticker();
+  toast("Template saved","ok");
+}
+function deleteTemplate(){
+  if(!tplEdit.key) return;
+  saveCustomTemplates(customTemplates().filter(c=>c.key!==tplEdit.key));
+  if(templateKey===tplEdit.key){ templateKey="standard"; lsSet("cl_tpl","standard"); }
+  refreshTemplatePicker();
+  document.getElementById("tplOverlay").classList.remove("show");
+  if(previewRec) showPreview(previewRec);
+  toast("Template deleted","ok");
+}
+
 /* ========================= UTIL ========================= */
 function esc(s){return String(s==null?"":s).replace(/[<>&"']/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));}
 function toast(m,k){const t=document.getElementById("toast");t.textContent=m;t.className="toast show "+(k||"");clearTimeout(t._t);t._t=setTimeout(()=>t.className="toast "+(k||""),3600);}
@@ -850,7 +1047,14 @@ document.getElementById("modalPrint").onclick=()=>{if(modalRec){printRecs([modal
 document.getElementById("saveEdits").onclick=saveEdits;
 document.getElementById("modalStage").ondblclick=()=>{const i=document.querySelector("#editFields input");if(i){i.focus();i.select();}};
 document.getElementById("printerSel").onchange=e=>{printerName=e.target.value;paintDymo();};
-document.addEventListener("keydown",e=>{if(e.key==="Escape")closeModal();});
+// Template builder wiring
+document.getElementById("tplEditBtn").onclick=()=>{ const isCustom=customTemplates().some(c=>c.key===templateKey); openTemplateEditor(isCustom?templateKey:null); };
+document.getElementById("tplX").onclick=()=>document.getElementById("tplOverlay").classList.remove("show");
+document.getElementById("tplCancel").onclick=()=>document.getElementById("tplOverlay").classList.remove("show");
+document.getElementById("tplOverlay").onclick=e=>{if(e.target.id==="tplOverlay")document.getElementById("tplOverlay").classList.remove("show");};
+document.getElementById("tplSave").onclick=saveTemplate;
+document.getElementById("tplDelete").onclick=deleteTemplate;
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeModal();document.getElementById("tplOverlay").classList.remove("show");}});
 // Make connecting effortless: re-check whenever the worker returns to the tab.
 window.addEventListener("focus",checkDymo);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)checkDymo();});
@@ -859,12 +1063,11 @@ document.addEventListener("visibilitychange",()=>{if(!document.hidden)checkDymo(
 function lsGet(k,d){ try{ const v=localStorage.getItem(k); return v==null?d:v; }catch(e){ return d; } }
 function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
 selLabelKey = (CONFIG.labelTypes.some(l=>l.key===lsGet("cl_label")) ? lsGet("cl_label") : CONFIG.defaultLabelKey);
-templateKey = (TEMPLATES.some(t=>t.key===lsGet("cl_tpl")) ? lsGet("cl_tpl") : "standard");
+templateKey = lsGet("cl_tpl","standard");
 copies = Math.max(1, Math.min(50, parseInt(lsGet("cl_copies","1"))||1));
 (function initSettings(){
   const tpl=document.getElementById("tplSel");
-  tpl.innerHTML=TEMPLATES.map(t=>`<option value="${t.key}">${esc(t.name)}</option>`).join("");
-  tpl.value=templateKey;
+  refreshTemplatePicker();   // includes built-in + custom; fixes templateKey if stale
   const ls=document.getElementById("labelSel");
   ls.innerHTML=CONFIG.labelTypes.map(l=>`<option value="${l.key}">${esc(l.name)}</option>`).join("");
   ls.value=selLabelKey;
