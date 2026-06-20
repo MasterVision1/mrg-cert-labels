@@ -58,6 +58,9 @@ header{
 .logo .txt b{font-size:15px;font-weight:800;letter-spacing:-.2px;display:block;line-height:1.1}
 .logo .txt span{font-size:11.5px;color:var(--ink3);font-weight:600}
 
+.install-btn{margin-left:auto;display:inline-flex;align-items:center;gap:7px;padding:8px 16px;border-radius:var(--r-pill);border:none;background:var(--primary);color:#fff;font-weight:700;font-size:13px;cursor:pointer;box-shadow:0 3px 10px rgba(27,79,168,.35);transition:var(--ease) .15s}
+.install-btn:hover{background:var(--primary-dark);transform:translateY(-1px)}
+.install-btn+.dymo-pill{margin-left:14px}
 .dymo-pill{
   margin-left:auto; display:flex; align-items:center; gap:9px; padding:7px 12px; border-radius:var(--r-pill);
   background:var(--canvas-mute); border:1px solid var(--line); cursor:pointer; transition:var(--ease) .18s; font-weight:600; font-size:13px;
@@ -303,6 +306,7 @@ kbd{background:var(--canvas-mute);border:1px solid var(--line);border-bottom-wid
     <div class="logo-div"></div>
     <div class="txt"><b>Cert Label Station</b></div>
   </div>
+  <button class="install-btn" id="installBtn" style="display:none" title="Install Cert Label Station on this computer">⤓ Install app</button>
   <div class="dymo-pill" id="dymoPill" title="Click to re-check / allow DYMO access">
     <span class="dot"></span>
     <span id="dymoText">Checking DYMO…</span>
@@ -1183,6 +1187,33 @@ copies = Math.max(1, Math.min(50, parseInt(lsGet("cl_copies","1"))||1));
   tpl.onchange=()=>{ templateKey=tpl.value; lsSet("cl_tpl",templateKey); refresh(); };
   ls.onchange=()=>{ selLabelKey=ls.value; lsSet("cl_label",selLabelKey); refresh(); };
   document.getElementById("copies").onchange=e=>{ copies=Math.max(1,Math.min(50,parseInt(e.target.value)||1)); e.target.value=copies; lsSet("cl_copies",String(copies)); refresh(); };
+})();
+
+/* ===== PWA install (makes "Install" in the MRG App Store actually install) ===== */
+(function(){
+  if("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(()=>{});
+  const APP_ID="cert-label-station";
+  const btn=document.getElementById("installBtn");
+  const standalone=matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+  const wantInstall=new URLSearchParams(location.search).get("install")==="1";
+  let deferred=null;
+  async function doInstall(){
+    if(!deferred) return;
+    deferred.prompt();
+    try{ await deferred.userChoice; }catch(e){}
+    deferred=null; if(btn) btn.style.display="none";
+  }
+  window.addEventListener("beforeinstallprompt",e=>{
+    e.preventDefault(); deferred=e;
+    if(btn && !standalone) btn.style.display="inline-flex";
+    if(wantInstall){ doInstall(); toast("Click ‘Install’ to add this app to your computer","" ); }
+  });
+  window.addEventListener("appinstalled",()=>{
+    if(btn) btn.style.display="none";
+    try{ if(window.opener) window.opener.postMessage({type:"mrg-app-installed",appId:APP_ID},"*"); }catch(e){}
+    toast("Installed on this computer ✓","ok");
+  });
+  if(btn) btn.onclick=doInstall;
 })();
 
 loadRecords(true); checkDymo();
