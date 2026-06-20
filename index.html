@@ -194,8 +194,13 @@ aside{display:flex;flex-direction:column;gap:14px;min-height:0;overflow:auto;pad
 .te-txt:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-soft)}
 .te-size,.te-align,.te-raw{border:1px solid var(--line);border-radius:6px;padding:6px 6px;font:inherit;font-size:12px;font-weight:600;color:var(--ink);background:var(--surf);cursor:pointer}
 .te-size{width:54px} .te-align{width:96px} .te-raw{width:96px}
-.te-block .rm{border:none;background:var(--canvas-mute);width:26px;height:26px;border-radius:6px;cursor:pointer;color:var(--ink2);font-size:13px;font-weight:700;flex:none}
+.te-block .rm,.te-block .dup{border:none;background:var(--canvas-mute);width:26px;height:26px;border-radius:6px;cursor:pointer;color:var(--ink2);font-size:13px;font-weight:700;flex:none;transition:var(--ease) .12s}
+.te-block .dup:hover{background:var(--primary-soft);color:var(--primary)}
 .te-block .rm:hover{background:var(--red-soft);color:var(--red)}
+/* global press feedback + smooth list swap */
+button:active:not(:disabled){transform:scale(.97)}
+.list.swap{animation:listFade .24s var(--ease)}
+@keyframes listFade{from{opacity:.3;transform:translateY(4px)}to{opacity:1;transform:none}}
 .te-palette{display:flex;flex-wrap:wrap;gap:6px}
 .te-palette button{border:1px solid var(--line);background:var(--surf);border-radius:var(--r-pill);padding:6px 12px;font-size:12px;font-weight:600;color:var(--ink);cursor:pointer}
 .te-palette button:hover{border-color:var(--primary);color:var(--primary);background:var(--primary-soft)}
@@ -575,12 +580,27 @@ function rawGet(f,key){
 }
 // Substitute {field} placeholders in a custom-text block with this cert's values.
 function substitute(t,f){
-  return String(t).replace(/\{(\w+)\}/g,(_,k)=>{ const m={part:f.part,po:f.po,material:f.material,spec:f.spec,size:f.size,heat:f.heat,qty:f.qty,supplier:f.supplier}; return m[k]!=null?m[k]:""; })
+  return String(t).replace(/\{(\w+)\}/g,(_,k)=>{ const m={part:f.part,po:f.po,material:f.material,spec:f.spec,size:f.size,heat:f.heat,qty:f.qty,supplier:f.supplier,date:f.date}; return m[k]!=null?m[k]:""; })
     .replace(/[ \t]{2,}/g," ").trim();
 }
 function makeBarcodeCanvas(value){
   if(typeof JsBarcode==="undefined" || !value) return null;
   try{ const c=document.createElement("canvas"); JsBarcode(c, String(value), {format:"CODE128", displayValue:true, fontSize:30, font:"Arial", height:90, margin:4, textMargin:2}); return c; }catch(e){ return null; }
+}
+// MRG Tool & Die logo drawn on the label (black, for thermal). ~3.3:1 aspect.
+function drawLogoMark(x, dx, dy, w, h){
+  const lw=Math.min(w, h*3.3), ox=dx+(w-lw)/2, t=dy+h*0.14, btm=dy+h*0.86;
+  x.save(); x.strokeStyle="#000"; x.fillStyle="#000"; x.lineWidth=Math.max(1,h*0.035); x.lineCap="square";
+  x.beginPath();
+  x.moveTo(ox,t); x.lineTo(ox+lw,t);
+  x.moveTo(ox,btm); x.lineTo(ox+lw,btm);
+  x.moveTo(ox,t); x.lineTo(ox,btm);
+  x.moveTo(ox+lw,t); x.lineTo(ox+lw,btm);
+  x.stroke();
+  x.textBaseline="alphabetic"; x.textAlign="left";
+  x.font=`900 ${h*0.5}px Arial`; x.fillText("MRG", ox+lw*0.07, dy+h*0.60);
+  x.font=`700 ${h*0.15}px Arial`; x.fillText("TOOL AND DIE", ox+lw*0.075, dy+h*0.76);
+  x.restore();
 }
 function drawQR(x, value, dx, dy, size){
   if(typeof qrcode==="undefined" || !value) return;
@@ -602,6 +622,7 @@ function drawRows(g, rows){
   const items=[]; let maxW=0;
   for(const r of rows){
     if(r.type==="divider"){ items.push({kind:"divider"}); continue; }
+    if(r.type==="logo"){ items.push({kind:"logo", h:H*0.26}); continue; }
     if(r.type==="barcode"){ const v=rawGet(f,r.raw); if(!v) continue; items.push({kind:"barcode", h:H*0.24, value:v}); continue; }
     if(r.type==="qr"){ const v=rawGet(f,r.raw); if(!v) continue; items.push({kind:"qr", h:H*0.5, value:v}); continue; }
     if(r.type==="pair"){
@@ -621,7 +642,7 @@ function drawRows(g, rows){
     items.push({kind:"text",sz,align:r.align||"left",label:r.label&&fd?fd.label:"",lines,secVal:r.secondary&&TPL_FIELDS[r.secondary]?TPL_FIELDS[r.secondary].get(f):""});
   }
   const rule=Math.max(2,Math.round(H*0.012)), gap=H*0.05;
-  const itemH=it=> it.kind==="divider"?rule : it.kind==="barcode"?it.h : it.kind==="qr"?it.h : it.kind==="pair"?it.sz : (it.label?it.sz*0.46:0)+it.lines.length*it.sz*1.16;
+  const itemH=it=> it.kind==="divider"?rule : it.kind==="logo"?it.h : it.kind==="barcode"?it.h : it.kind==="qr"?it.h : it.kind==="pair"?it.sz : (it.label?it.sz*0.46:0)+it.lines.length*it.sz*1.16;
   let total=0; items.forEach((it,i)=>{ total+=itemH(it)+(i?gap:0); });
   const avail=H-pad*2; let sc=total>0?avail/total:1; if(maxW>0)sc=Math.min(sc,cw/maxW);
   let y=pad+Math.max(0,(avail-total*sc)/2);
@@ -629,6 +650,7 @@ function drawRows(g, rows){
   items.forEach((it,i)=>{
     if(i) y+=gap*sc;
     if(it.kind==="divider"){ x.fillStyle="#000"; x.fillRect(pad,y,cw,rule); y+=rule; return; }
+    if(it.kind==="logo"){ drawLogoMark(x,pad,y,cw,it.h*sc); y+=it.h*sc; return; }
     if(it.kind==="barcode"){ const bc=makeBarcodeCanvas(it.value), h=it.h*sc; if(bc){ const w=Math.min(cw, bc.width*(h/bc.height)); x.drawImage(bc,pad+(cw-w)/2,y,w,h); } y+=h; return; }
     if(it.kind==="qr"){ const s=Math.min(it.h*sc,cw); drawQR(x,it.value,pad,y,s); y+=it.h*sc; return; }
     const sz=it.sz*sc;
@@ -839,10 +861,13 @@ function scaleToFit(stage,sticker){
 }
 // Normalized field set used by both the preview and the print layout.
 function fields(rec){
+  const dt=rec.printedAt||rec.filedAt; let date="";
+  try{ date = dt ? new Date(dt).toLocaleDateString() : new Date().toLocaleDateString(); }catch(e){}
   return {
     part:(rec.partNumber||"").trim(), po:(rec.poNumber||"").trim(),
     material:(rec.material||"").trim(), spec:(rec.spec||"").trim(), size:(rec.size||"").trim(),
     heat:(rec.heat||"").trim(), qty:(rec.quantity||"").trim(),
+    supplier:(rec.supplier||"").trim(), date,
   };
 }
 // One clean sticker, separated zones (ID · material · heat/qty). Content lives in
@@ -1005,16 +1030,25 @@ const PALETTE=[
   {name:"Heat # + Qty row", make:()=>({type:"pair",left:"heat",right:"qty",size:"lg",labels:true})},
   {name:"Qty (big)", make:()=>({type:"text",text:"QTY {qty}",size:"lg",align:"left"})},
   {name:"Supplier", make:()=>({type:"text",text:"{supplier}",size:"sm",align:"left"})},
+  {name:"Date", make:()=>({type:"text",text:"{date}",size:"sm",align:"right"})},
+  {name:"MRG logo", make:()=>({type:"logo"})},
   {name:"── Divider ──", make:()=>({type:"divider"})},
   {name:"Barcode — Heat #", make:()=>({type:"barcode",raw:"heat"})},
   {name:"Barcode — PO #", make:()=>({type:"barcode",raw:"po"})},
   {name:"QR — Heat #", make:()=>({type:"qr",raw:"heat"})},
   {name:"QR — full info", make:()=>({type:"qr",raw:"all"})},
 ];
+// Editable row blueprints for the built-ins, so you can duplicate one and tweak it.
+const BUILTIN_ROWS={
+  standard:[{type:"text",text:"{part}     PO {po}",size:"lg",align:"left"},{type:"divider"},{type:"text",text:"{material}  ·  {spec}",size:"md",align:"left"},{type:"text",text:"{size}",size:"md",align:"left"},{type:"divider"},{type:"pair",left:"heat",right:"qty",size:"lg",labels:true}],
+  heat:[{type:"text",text:"{part}     PO {po}",size:"sm",align:"left"},{type:"divider"},{type:"text",text:"HEAT {heat}",size:"xl",align:"left"},{type:"divider"},{type:"text",text:"{material}  ·  {spec}  ·  {size}",size:"sm",align:"left"},{type:"text",text:"QTY {qty}",size:"md",align:"right"}],
+  compact:[{type:"text",text:"{part}     PO {po}",size:"md",align:"left"},{type:"text",text:"{material}  ·  {spec}",size:"md",align:"left"},{type:"text",text:"{size}",size:"md",align:"left"},{type:"text",text:"HEAT {heat}     QTY {qty}",size:"md",align:"left"}],
+};
 function openTemplateEditor(key){
   const existing=customTemplates().find(t=>t.key===key);
-  tplEdit = existing ? {key:existing.key,name:existing.name,rows:JSON.parse(JSON.stringify(templateRows(existing)))}
-                     : {key:null,name:"",rows:[{type:"text",text:"{part}     PO {po}",size:"lg",align:"left"},{type:"divider"},{type:"text",text:"{material}  ·  {spec}",size:"md",align:"left"},{type:"text",text:"{size}",size:"md",align:"left"},{type:"divider"},{type:"pair",left:"heat",right:"qty",size:"lg",labels:true}]};
+  if(existing){ tplEdit={key:existing.key,name:existing.name,rows:JSON.parse(JSON.stringify(templateRows(existing)))}; }
+  else if(BUILTIN_ROWS[key]){ const bn=(TEMPLATES.find(t=>t.key===key)||{}).name||"Template"; tplEdit={key:null,name:bn+" copy",rows:JSON.parse(JSON.stringify(BUILTIN_ROWS[key]))}; }
+  else { tplEdit={key:null,name:"",rows:JSON.parse(JSON.stringify(BUILTIN_ROWS.standard))}; }
   document.getElementById("tplTitle").textContent=existing?"Edit template":"New template";
   document.getElementById("tplName").value=tplEdit.name;
   document.getElementById("tplDelete").style.display=existing?"inline-flex":"none";
@@ -1037,10 +1071,12 @@ function renderTplEditor(){
     if(r.type==="text") mid=`<input class="te-txt" data-i="${i}" value="${esc(r.text||"")}" placeholder="Type anything… {heat} {po} {material}…">${sizeSel(i,r.size)}${alignSel(i,r.align)}`;
     else if(r.type==="pair") mid=`<span class="nm">Heat # + Qty (two columns)</span>${sizeSel(i,r.size)}`;
     else if(r.type==="divider") mid=`<span class="nm">── Divider line ──</span>`;
+    else if(r.type==="logo") mid=`<span class="nm">MRG logo</span>`;
     else if(r.type==="barcode") mid=`<span class="nm">Barcode</span>${fieldSel(i,r.raw,[["heat","Heat #"],["po","PO #"],["part","Part"]])}`;
     else if(r.type==="qr") mid=`<span class="nm">QR code</span>${fieldSel(i,r.raw,[["heat","Heat #"],["po","PO #"],["all","Full info"]])}`;
-    return `<div class="te-block" draggable="true" data-i="${i}"><span class="te-grip">⠿</span>${mid}<button class="rm" data-rm="${i}">✕</button></div>`;
+    return `<div class="te-block" draggable="true" data-i="${i}"><span class="te-grip">⠿</span>${mid}<button class="dup" data-dup="${i}" title="Duplicate block">⎘</button><button class="rm" data-rm="${i}">✕</button></div>`;
   }).join("");
+  host.querySelectorAll("[data-dup]").forEach(b=>b.onclick=()=>{ const i=+b.dataset.dup; tplEdit.rows.splice(i+1,0,JSON.parse(JSON.stringify(tplEdit.rows[i]))); renderTplEditor(); });
   // controls
   host.querySelectorAll(".te-txt").forEach(inp=>inp.oninput=()=>{ tplEdit.rows[+inp.dataset.i].text=inp.value; tplUpdatePreview(); });
   host.querySelectorAll(".te-size").forEach(s=>s.onchange=()=>{ tplEdit.rows[+s.dataset.i].size=s.value; tplUpdatePreview(); });
@@ -1089,7 +1125,7 @@ function esc(s){return String(s==null?"":s).replace(/[<>&"']/g,c=>({'<':'&lt;','
 function toast(m,k){const t=document.getElementById("toast");t.textContent=m;t.className="toast show "+(k||"");clearTimeout(t._t);t._t=setTimeout(()=>t.className="toast "+(k||""),3600);}
 
 /* ========================= WIRE ========================= */
-document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));t.classList.add("active");view=t.dataset.view;render();});
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));t.classList.add("active");view=t.dataset.view;render();const l=document.getElementById("list");l.classList.remove("swap");void l.offsetWidth;l.classList.add("swap");});
 document.getElementById("q").addEventListener("input",()=>render());
 document.getElementById("selAll").onclick=()=>{const v=visible();const all=v.length&&v.every(r=>selected.has(r.id));v.forEach(r=>all?selected.delete(r.id):selected.add(r.id));render();};
 document.getElementById("clearSel").onclick=()=>{selected.clear();render();};
@@ -1104,13 +1140,20 @@ document.getElementById("saveEdits").onclick=saveEdits;
 document.getElementById("modalStage").ondblclick=()=>{const i=document.querySelector("#editFields input");if(i){i.focus();i.select();}};
 document.getElementById("printerSel").onchange=e=>{printerName=e.target.value;paintDymo();};
 // Template builder wiring
-document.getElementById("tplEditBtn").onclick=()=>{ const isCustom=customTemplates().some(c=>c.key===templateKey); openTemplateEditor(isCustom?templateKey:null); };
+document.getElementById("tplEditBtn").onclick=()=>openTemplateEditor(templateKey);
 document.getElementById("tplX").onclick=()=>document.getElementById("tplOverlay").classList.remove("show");
 document.getElementById("tplCancel").onclick=()=>document.getElementById("tplOverlay").classList.remove("show");
 document.getElementById("tplOverlay").onclick=e=>{if(e.target.id==="tplOverlay")document.getElementById("tplOverlay").classList.remove("show");};
 document.getElementById("tplSave").onclick=saveTemplate;
 document.getElementById("tplDelete").onclick=deleteTemplate;
 document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeModal();document.getElementById("tplOverlay").classList.remove("show");}});
+// Shortcuts: "/" focuses search, Enter prints the current selection
+document.addEventListener("keydown",e=>{
+  if(/^(input|select|textarea)$/i.test(e.target.tagName)) return;
+  if(document.getElementById("overlay").classList.contains("show")||document.getElementById("tplOverlay").classList.contains("show")) return;
+  if(e.key==="/"){ e.preventDefault(); document.getElementById("q").focus(); }
+  else if(e.key==="Enter" && selected.size){ e.preventDefault(); printRecs([...selected].map(id=>RECORDS.find(r=>r.id===id)).filter(Boolean)); }
+});
 // Make connecting effortless: re-check whenever the worker returns to the tab.
 window.addEventListener("focus",checkDymo);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)checkDymo();});
