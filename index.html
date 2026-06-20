@@ -159,7 +159,8 @@ aside{display:flex;flex-direction:column;gap:14px;min-height:0;overflow:auto;pad
 .sticker .kvb i{font-style:normal;font-weight:700;color:#8a8a8a;font-size:15px;letter-spacing:.06em;text-transform:uppercase}
 .sticker .kvb b{font-size:38px;font-weight:800;line-height:1}
 /* Real DYMO render image — shown at native size so it's crisp, never upscaled */
-.dymo-img{max-width:100%;height:auto;image-rendering:auto;background:#fff;border-radius:4px;box-shadow:0 2px 10px rgba(0,0,0,.16);display:block;margin:0 auto}
+.dymo-img{max-width:100%;height:auto;image-rendering:auto;background:#fff;border-radius:4px;box-shadow:0 2px 10px rgba(0,0,0,.16);display:block;margin:0 auto;animation:imgIn .26s var(--ease)}
+@keyframes imgIn{from{opacity:0;transform:scale(.985)}to{opacity:1;transform:none}}
 .print-truth{text-align:center;font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.05em;margin-top:8px}
 
 .print-status{display:flex;align-items:center;gap:9px;padding:11px 14px;border-radius:10px;font-weight:600;font-size:13px;cursor:pointer;transition:var(--ease) .15s}
@@ -177,6 +178,7 @@ aside{display:flex;flex-direction:column;gap:14px;min-height:0;overflow:auto;pad
 .set label{font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em}
 .set select,.set input[type=number]{border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-weight:600;color:var(--ink);background:var(--surf)}
 .set input[type=number]{width:72px}
+.set-hint{font-size:11.5px;color:var(--ink3);margin-top:-4px}
 .set .chk{display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:13px;color:var(--ink);font-weight:600}
 .set .chk input{width:17px;height:17px;accent-color:var(--primary)}
 .howto{color:var(--ink2);font-size:12.5px;line-height:1.65}
@@ -302,7 +304,8 @@ kbd{background:var(--canvas-mute);border:1px solid var(--line);border-bottom-wid
       <div class="hd">Print settings</div>
       <div class="bd setbd">
         <div class="set"><label>Label size</label><select id="labelSel"></select></div>
-        <div class="set row"><label>Copies</label><input type="number" id="copies" min="1" max="50" value="1"></div>
+        <div class="set row"><label>Copies per piece</label><input type="number" id="copies" min="1" max="50" value="1"></div>
+        <div class="set-hint">Prints one label per piece (QTY) by default.</div>
       </div>
     </div>
   </aside>
@@ -542,11 +545,15 @@ function buildLabelSetXml(rec){
   const objs=Object.entries(map).map(([k,v])=>`<ObjectData Name="${k}"><![CDATA[${v||""}]]></ObjectData>`).join("");
   return `<?xml version="1.0" encoding="utf-8"?><LabelSet><LabelRecord>${objs}</LabelRecord></LabelSet>`;
 }
-async function dymoPrintOne(rec){
+// One label per physical piece by default: a cert with QTY 4 prints 4 stickers.
+// "Copies per piece" (default 1) multiplies that for the rare double-up case.
+function qtyOf(rec){ const n=parseInt(rec.quantity); return n>0?n:1; }
+function stickerCount(recs){ return recs.reduce((s,r)=>s+qtyOf(r)*(copies||1),0); }
+async function dymoPrintOne(rec, n){
   const useTpl=!!CONFIG.labelTemplateXml;
   const body=new URLSearchParams();
   body.set("printerName",printerName);
-  body.set("printParamsXml",`<LabelWriterPrintParams><Copies>${copies||1}</Copies><PrintQuality>BarcodeAndGraphics</PrintQuality></LabelWriterPrintParams>`);
+  body.set("printParamsXml",`<LabelWriterPrintParams><Copies>${Math.max(1,n||1)}</Copies><PrintQuality>BarcodeAndGraphics</PrintQuality></LabelWriterPrintParams>`);
   body.set("labelXml", useTpl?CONFIG.labelTemplateXml:buildLabelXml(rec));
   body.set("labelSetXml", useTpl?buildLabelSetXml(rec):"");
   const r=await fetch(CONFIG.dymoBase+"/PrintLabel",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:body.toString()});
@@ -554,10 +561,10 @@ async function dymoPrintOne(rec){
 }
 async function printRecs(recs){
   if(!dymoOk){ reconnectDymo(); return; }
-  let ok=0,fail=0;
-  for(const rec of recs){ try{await dymoPrintOne(rec);ok++;}catch(e){fail++;console.error(e);} }
-  if(ok) await markPrinted(recs.slice(0,ok).map(r=>r.id));
-  toast(`${ok} sticker${ok!==1?"s":""} sent to ${printerName}`+(fail?` · ${fail} failed`:""),fail?"err":"ok");
+  let okCerts=0, stickers=0, fail=0;
+  for(const rec of recs){ const n=qtyOf(rec)*(copies||1); try{await dymoPrintOne(rec,n); okCerts++; stickers+=n;}catch(e){fail++;console.error(e);} }
+  if(okCerts) await markPrinted(recs.slice(0,okCerts).map(r=>r.id));
+  toast(`${stickers} sticker${stickers!==1?"s":""} sent to ${printerName}`+(fail?` · ${fail} failed`:""),fail?"err":"ok");
   selected.clear(); render();
 }
 
@@ -612,8 +619,9 @@ function toggle(id,rec){ selected.has(id)?selected.delete(id):selected.add(id); 
 function updateActionBar(){
   const bar=document.getElementById("actionbar"), n=selected.size;
   if(n){ bar.classList.add("show");
-    document.getElementById("actionSum").innerHTML=`<b>${n}</b> selected <span>· ${n*CONFIG.copiesPerCert} sticker${n*CONFIG.copiesPerCert!==1?"s":""}</span>`;
-    const b=document.getElementById("printBtn"); b.disabled=!dymoOk; b.textContent=dymoOk?`🖨 Print ${n} sticker${n!==1?"s":""}`:DYMO_TEXT[dymoState].btn(n);
+    const recs=[...selected].map(id=>RECORDS.find(r=>r.id===id)).filter(Boolean), m=stickerCount(recs);
+    document.getElementById("actionSum").innerHTML=`<b>${n}</b> cert${n!==1?"s":""} <span>· ${m} sticker${m!==1?"s":""}</span>`;
+    const b=document.getElementById("printBtn"); b.disabled=!dymoOk; b.textContent=dymoOk?`🖨 Print ${m} sticker${m!==1?"s":""}`:DYMO_TEXT[dymoState].btn(m);
   } else bar.classList.remove("show");
 }
 // Shrink a rendered sticker so the (possibly long) lines fit the stage — mirrors the
@@ -797,15 +805,19 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape")closeModal();});
 window.addEventListener("focus",checkDymo);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)checkDymo();});
 
-// Print settings
-selLabelKey=CONFIG.defaultLabelKey;
+// Print settings — remembered per station (localStorage)
+function lsGet(k,d){ try{ const v=localStorage.getItem(k); return v==null?d:v; }catch(e){ return d; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+selLabelKey = (CONFIG.labelTypes.some(l=>l.key===lsGet("cl_label")) ? lsGet("cl_label") : CONFIG.defaultLabelKey);
+copies = Math.max(1, Math.min(50, parseInt(lsGet("cl_copies","1"))||1));
 (function initSettings(){
   const ls=document.getElementById("labelSel");
   ls.innerHTML=CONFIG.labelTypes.map(l=>`<option value="${l.key}">${esc(l.name)}</option>`).join("");
   ls.value=selLabelKey;
-  const refresh=()=>{ if(previewRec) showPreview(previewRec); if(modalRec) renderModalSticker(); };
-  ls.onchange=()=>{ selLabelKey=ls.value; refresh(); };
-  document.getElementById("copies").onchange=e=>{ copies=Math.max(1,Math.min(50,parseInt(e.target.value)||1)); e.target.value=copies; };
+  document.getElementById("copies").value=copies;
+  const refresh=()=>{ if(previewRec) showPreview(previewRec); if(modalRec) renderModalSticker(); updateActionBar(); };
+  ls.onchange=()=>{ selLabelKey=ls.value; lsSet("cl_label",selLabelKey); refresh(); };
+  document.getElementById("copies").onchange=e=>{ copies=Math.max(1,Math.min(50,parseInt(e.target.value)||1)); e.target.value=copies; lsSet("cl_copies",String(copies)); refresh(); };
 })();
 
 loadRecords(true); checkDymo();
