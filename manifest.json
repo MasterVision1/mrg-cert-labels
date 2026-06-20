@@ -1,0 +1,16 @@
+{
+  "name": "Cert Label Station",
+  "short_name": "Cert Labels",
+  "description": "Print material cert / heat-trace labels to a local DYMO from approved cert packets.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0D2B5E",
+  "theme_color": "#1B4FA8",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
