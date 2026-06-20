@@ -484,21 +484,56 @@ function printLines(rec){
 // printer is connected (the legacy DieCutLabel only passed with no printer). One
 // AlwaysFit text block sized to the whole label, so the info fills it. Validated
 // live: RenderLabel + PrintLabel both 200 with a printer connected.
-function buildLabelXml(rec){
-  const L=currentLabel(), pad=0.06;
-  const lx=pad, ly=pad, lw=(L.wIn-pad*2).toFixed(4), lh=(L.hIn-pad*2).toFixed(4);
-  const spans=printLines(rec).map(t=>
-    `<LineTextSpan><TextSpan><Text>${esc(t)}</Text><FontInfo><FontName>Arial</FontName><FontSize>10</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan></LineTextSpan>`).join("");
-  return `<?xml version="1.0" encoding="utf-8"?>
-<DesktopLabel Version="1"><DYMOLabel Version="3"><Description>Cert</Description><Orientation>Landscape</Orientation><LabelName>${esc(L.labelName)}</LabelName><InitialLength>0</InitialLength><BorderStyle>SolidLine</BorderStyle><DYMORect><DYMOPoint><X>0</X><Y>0</Y></DYMOPoint><Size><Width>${L.wIn}</Width><Height>${L.hIn}</Height></Size></DYMORect><BorderColor><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderColor><BorderThickness>1</BorderThickness><Show_Border>False</Show_Border><DynamicLayoutManager><RotationBehavior>ClearObjects</RotationBehavior><LabelObjects><TextObject><Name>CERT</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="0" R="1" G="1" B="1"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><HorizontalAlignment>Left</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>AlwaysFit</FitMode><IsVertical>False</IsVertical><FormattedText><FitMode>AlwaysFit</FitMode><HorizontalAlignment>Left</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical>${spans}</FormattedText><ObjectLayout><DYMOPoint><X>${lx}</X><Y>${ly}</Y></DYMOPoint><Size><Width>${lw}</Width><Height>${lh}</Height></Size></ObjectLayout></TextObject></LabelObjects></DynamicLayoutManager></DYMOLabel><LabelApplication>Blank</LabelApplication><DataTable><Columns></Columns><Rows></Rows></DataTable></DesktopLabel>`;
+// ---- The designed label, drawn on a 300-DPI canvas ----------------------------
+// This SAME image is shown as the preview AND embedded in the DYMO label as an
+// ImageObject, so the print is pixel-identical to the preview, looks designed,
+// and fills the whole label (DYMO's plain auto-fit text can't do this).
+function drawStickerCanvas(rec){
+  const L=currentLabel(), DPI=300;
+  const W=Math.round(L.wIn*DPI), H=Math.round(L.hIn*DPI);
+  const cv=document.createElement("canvas"); cv.width=W; cv.height=H;
+  const x=cv.getContext("2d");
+  x.fillStyle="#fff"; x.fillRect(0,0,W,H);
+  const f=fields(rec), A="Arial";
+  const pad=Math.round(H*0.10), cw=W-pad*2;
+  const headline=f.part||(f.po?("PO "+f.po):"—");
+  const matLine=[f.material,f.spec].filter(Boolean).join("   ·   ");
+  function wrap(text,font,maxW){ x.font=font; const words=String(text).split(/\s+/),out=[]; let cur="";
+    for(const w of words){ const t=cur?cur+" "+w:w; if(x.measureText(t).width>maxW&&cur){out.push(cur);cur=w;}else cur=t;} if(cur)out.push(cur); return out; }
+  let fH=H*0.215, fB=H*0.15, fS=H*0.13, fK=H*0.20, fL=H*0.085, rule=Math.max(2,Math.round(H*0.012)), gap=H*0.055;
+  const matLines=matLine?wrap(matLine,`bold ${fB}px ${A}`,cw):[];
+  const sizeLines=f.size?wrap(f.size,`600 ${fS}px ${A}`,cw):[];
+  const hasFoot=!!(f.heat||f.qty);
+  const total=()=>{ let t=fH; t+=gap+rule+gap; t+=matLines.length*fB*1.16; t+=sizeLines.length*fS*1.16; if(hasFoot)t+=gap+rule+gap+fK; return t; };
+  const avail=H-pad*2, sc=total()>avail?avail/total():1;
+  fH*=sc; fB*=sc; fS*=sc; fK*=sc; fL*=sc; gap*=sc;
+  let y=pad+Math.max(0,(avail-total())/2);
+  x.textBaseline="top";
+  x.fillStyle="#000"; x.textAlign="left"; x.font=`800 ${fH}px ${A}`;
+  x.fillText(headline,pad,y);
+  if(f.part&&f.po){ x.textAlign="right"; x.font=`800 ${fH*0.78}px ${A}`; x.fillText("PO "+f.po,W-pad,y+fH*0.16); x.textAlign="left"; }
+  y+=fH+gap;
+  x.fillStyle="#000"; x.fillRect(pad,y,cw,rule); y+=rule+gap;
+  x.font=`bold ${fB}px ${A}`; x.fillStyle="#000";
+  for(const ln of matLines){ x.fillText(ln,pad,y); y+=fB*1.16; }
+  x.font=`600 ${fS}px ${A}`; x.fillStyle="#222";
+  for(const ln of sizeLines){ x.fillText(ln,pad,y); y+=fS*1.16; }
+  if(hasFoot){
+    y+=gap; x.fillStyle="#000"; x.fillRect(pad,y,cw,rule); y+=rule+gap;
+    x.textBaseline="alphabetic"; const base=y+fK;
+    if(f.heat){ x.textAlign="left"; x.font=`600 ${fL}px ${A}`; x.fillStyle="#777"; x.fillText("HEAT",pad,base);
+      const lo=x.measureText("HEAT  ").width; x.font=`800 ${fK}px ${A}`; x.fillStyle="#000"; x.fillText(f.heat,pad+lo,base); }
+    if(f.qty){ x.textAlign="right"; x.font=`800 ${fK}px ${A}`; x.fillStyle="#000"; x.fillText(f.qty,W-pad,base);
+      const qw=x.measureText(f.qty).width; x.font=`600 ${fL}px ${A}`; x.fillStyle="#777"; x.fillText("QTY  ",W-pad-qw,base); }
+    x.textBaseline="top";
+  }
+  return cv.toDataURL("image/png");
 }
-// Ask the DYMO service to render the exact label image (true WYSIWYG of the print).
-async function renderViaDymo(rec){
-  const body=new URLSearchParams({ labelXml: CONFIG.labelTemplateXml||buildLabelXml(rec), renderParamsXml:"", labelSetXml: CONFIG.labelTemplateXml?buildLabelSetXml(rec):"" });
-  const r=await fetch(CONFIG.dymoBase+"/RenderLabel",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:body.toString()});
-  if(!r.ok) throw new Error("render "+r.status);
-  const b64=(await r.text()).replace(/^"|"$/g,"");
-  return "data:image/png;base64,"+b64;
+function buildLabelXml(rec){
+  const L=currentLabel();
+  const data=drawStickerCanvas(rec).replace(/^data:image\/png;base64,/,"");
+  return `<?xml version="1.0" encoding="utf-8"?>
+<DesktopLabel Version="1"><DYMOLabel Version="3"><Description>Cert</Description><Orientation>Landscape</Orientation><LabelName>${esc(L.labelName)}</LabelName><InitialLength>0</InitialLength><BorderStyle>SolidLine</BorderStyle><DYMORect><DYMOPoint><X>0</X><Y>0</Y></DYMOPoint><Size><Width>${L.wIn}</Width><Height>${L.hIn}</Height></Size></DYMORect><BorderColor><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderColor><BorderThickness>1</BorderThickness><Show_Border>False</Show_Border><DynamicLayoutManager><RotationBehavior>ClearObjects</RotationBehavior><LabelObjects><ImageObject><Name>CERT</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="0" R="1" G="1" B="1"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><Data>${data}</Data><ScaleMode>Fill</ScaleMode><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><ObjectLayout><DYMOPoint><X>0</X><Y>0</Y></DYMOPoint><Size><Width>${L.wIn}</Width><Height>${L.hIn}</Height></Size></ObjectLayout></ImageObject></LabelObjects></DynamicLayoutManager></DYMOLabel><LabelApplication>Blank</LabelApplication><DataTable><Columns></Columns><Rows></Rows></DataTable></DesktopLabel>`;
 }
 // Merge field values into a shop-designed template by named TextObject.
 function buildLabelSetXml(rec){
@@ -668,18 +703,9 @@ function fitSticker(box){
 // DYMO render (what actually prints) once the service responds. Debounced + guarded
 // per host so rapid edits/hovers don't pile up requests.
 function renderSticker(host, rec){
-  host.innerHTML=stickerHtml(rec);
-  requestAnimationFrame(()=>fitSticker(host));
-  if(!dymoReachable) return;
-  clearTimeout(host._t);
-  const seq=(host._seq=(host._seq||0)+1);
-  host._t=setTimeout(async()=>{
-    try{
-      const url=await renderViaDymo(rec);
-      if(host._seq!==seq) return;
-      host.innerHTML=`<img class="dymo-img" src="${url}" alt="DYMO label output"><div class="print-truth">✓ exactly what prints</div>`;
-    }catch(e){ /* keep the HTML representation */ }
-  },220);
+  // The canvas image IS what prints — show it directly (instant, sharp, exact).
+  const url=drawStickerCanvas(rec);
+  host.innerHTML=`<img class="dymo-img" src="${url}" alt="cert label"><div class="print-truth">✓ exactly what prints</div>`;
 }
 function showPreview(rec){
   previewRec=rec;
