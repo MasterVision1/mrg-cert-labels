@@ -185,11 +185,17 @@ aside{display:flex;flex-direction:column;gap:14px;min-height:0;overflow:auto;pad
 .te-label{font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
 .te-hint{font-size:11px;color:var(--ink3);font-weight:600;text-transform:none;letter-spacing:0}
 .te-blocks{display:flex;flex-direction:column;gap:6px;min-height:40px}
-.te-block{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surf);font-weight:600;font-size:13px}
+.te-block{display:flex;align-items:center;gap:7px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surf);font-weight:600;font-size:13px;transition:box-shadow .12s,border-color .12s,opacity .12s}
 .te-block .nm{flex:1}
-.te-block button{border:none;background:var(--canvas-mute);width:26px;height:26px;border-radius:6px;cursor:pointer;color:var(--ink2);font-size:13px;font-weight:700}
-.te-block button:hover{background:var(--line)}
-.te-block button.rm:hover{background:var(--red-soft);color:var(--red)}
+.te-grip{cursor:grab;color:var(--ink3);font-size:15px;user-select:none;padding:0 2px}
+.te-block.dragging{opacity:.45}
+.te-block.drop-into{border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-soft)}
+.te-txt{flex:1;min-width:0;border:1px solid var(--line);border-radius:6px;padding:7px 9px;font:inherit;font-weight:600;color:var(--ink)}
+.te-txt:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-soft)}
+.te-size,.te-align,.te-raw{border:1px solid var(--line);border-radius:6px;padding:6px 6px;font:inherit;font-size:12px;font-weight:600;color:var(--ink);background:var(--surf);cursor:pointer}
+.te-size{width:54px} .te-align{width:96px} .te-raw{width:96px}
+.te-block .rm{border:none;background:var(--canvas-mute);width:26px;height:26px;border-radius:6px;cursor:pointer;color:var(--ink2);font-size:13px;font-weight:700;flex:none}
+.te-block .rm:hover{background:var(--red-soft);color:var(--red)}
 .te-palette{display:flex;flex-wrap:wrap;gap:6px}
 .te-palette button{border:1px solid var(--line);background:var(--surf);border-radius:var(--r-pill);padding:6px 12px;font-size:12px;font-weight:600;color:var(--ink);cursor:pointer}
 .te-palette button:hover{border-color:var(--primary);color:var(--primary);background:var(--primary-soft)}
@@ -567,6 +573,11 @@ function rawGet(f,key){
   if(key==="all") return [f.part&&("Part "+f.part), f.po&&("PO "+f.po), f.material, f.spec, f.size, f.heat&&("Heat "+f.heat), f.qty&&("Qty "+f.qty)].filter(Boolean).join(" | ");
   return {heat:f.heat, po:f.po, part:f.part, material:f.material, spec:f.spec, size:f.size, qty:f.qty}[key] || "";
 }
+// Substitute {field} placeholders in a custom-text block with this cert's values.
+function substitute(t,f){
+  return String(t).replace(/\{(\w+)\}/g,(_,k)=>{ const m={part:f.part,po:f.po,material:f.material,spec:f.spec,size:f.size,heat:f.heat,qty:f.qty,supplier:f.supplier}; return m[k]!=null?m[k]:""; })
+    .replace(/[ \t]{2,}/g," ").trim();
+}
 function makeBarcodeCanvas(value){
   if(typeof JsBarcode==="undefined" || !value) return null;
   try{ const c=document.createElement("canvas"); JsBarcode(c, String(value), {format:"CODE128", displayValue:true, fontSize:30, font:"Arial", height:90, margin:4, textMargin:2}); return c; }catch(e){ return null; }
@@ -603,10 +614,11 @@ function drawRows(g, rows){
       items.push({kind:"pair",sz,lLabel:r.labels&&lf?lf.label:"",lVal:lv,rLabel:r.labels&&rf?rf.label:"",rVal:rv});
       continue;
     }
-    const fd=TPL_FIELDS[r.field], val=fd?fd.get(f):""; if(!val) continue;
+    const fd=r.field?TPL_FIELDS[r.field]:null;
+    const val=r.text!==undefined?substitute(r.text,f):(fd?fd.get(f):""); if(!val) continue;
     const sz=SZ(r.size||"md"), lines=wrap(val,`bold ${sz}px ${A}`,cw);
     x.font=`bold ${sz}px ${A}`; lines.forEach(ln=>maxW=Math.max(maxW,x.measureText(ln).width));
-    items.push({kind:"text",sz,label:r.label&&fd?fd.label:"",lines,secVal:r.secondary&&TPL_FIELDS[r.secondary]?TPL_FIELDS[r.secondary].get(f):""});
+    items.push({kind:"text",sz,align:r.align||"left",label:r.label&&fd?fd.label:"",lines,secVal:r.secondary&&TPL_FIELDS[r.secondary]?TPL_FIELDS[r.secondary].get(f):""});
   }
   const rule=Math.max(2,Math.round(H*0.012)), gap=H*0.05;
   const itemH=it=> it.kind==="divider"?rule : it.kind==="barcode"?it.h : it.kind==="qr"?it.h : it.kind==="pair"?it.sz : (it.label?it.sz*0.46:0)+it.lines.length*it.sz*1.16;
@@ -628,16 +640,19 @@ function drawRows(g, rows){
         if(it.rLabel){ const rw=x.measureText(it.rVal).width; x.font=`600 ${sz*0.42}px ${A}`; x.fillStyle="#777"; x.fillText(it.rLabel+"  ",W-pad-rw,base); } }
       x.textBaseline="top"; x.textAlign="left"; y+=sz; return;
     }
-    if(it.label){ x.font=`600 ${sz*0.42}px ${A}`; x.fillStyle="#777"; x.fillText(it.label,pad,y); y+=sz*0.46; }
-    x.fillStyle="#000"; x.textAlign="left";
-    it.lines.forEach((ln,j)=>{ x.font=`bold ${sz}px ${A}`; x.fillText(ln,pad,y);
-      if(j===0&&it.secVal){ x.textAlign="right"; x.font=`800 ${sz*0.78}px ${A}`; x.fillText(it.secVal,W-pad,y+sz*0.16); x.textAlign="left"; }
+    if(it.label){ x.font=`600 ${sz*0.42}px ${A}`; x.fillStyle="#777"; x.textAlign="left"; x.fillText(it.label,pad,y); y+=sz*0.46; }
+    x.fillStyle="#000";
+    const tx = it.align==="right"?W-pad : it.align==="center"?W/2 : pad;
+    it.lines.forEach((ln,j)=>{ x.textAlign=it.align; x.font=`bold ${sz}px ${A}`; x.fillText(ln,tx,y);
+      if(j===0&&it.secVal){ x.textAlign="right"; x.font=`800 ${sz*0.78}px ${A}`; x.fillText(it.secVal,W-pad,y+sz*0.16); }
       y+=sz*1.16; });
+    x.textAlign="left";
   });
 }
 function customTemplates(){ try{ return JSON.parse(localStorage.getItem("cl_custom")||"[]"); }catch(e){ return []; } }
 function saveCustomTemplates(arr){ try{ localStorage.setItem("cl_custom",JSON.stringify(arr)); }catch(e){} }
-function allTemplates(){ return [...TEMPLATES, ...customTemplates().map(t=>({key:t.key,name:t.name+" ★",draw:g=>drawRows(g,t.blocks.map(bk=>BLOCKS[bk]&&BLOCKS[bk].row).filter(Boolean))}))]; }
+function templateRows(t){ return t.rows || (t.blocks||[]).map(bk=>BLOCKS[bk]&&BLOCKS[bk].row).filter(Boolean); }
+function allTemplates(){ return [...TEMPLATES, ...customTemplates().map(t=>({key:t.key,name:t.name+" ★",draw:g=>drawRows(g,templateRows(t))}))]; }
 function currentTemplate(){ return allTemplates().find(t=>t.key===templateKey) || TEMPLATES[0]; }
 function drawStickerCanvas(rec, rowsOverride){
   const L=currentLabel(), DPI=300;
@@ -979,38 +994,79 @@ function refreshTemplatePicker(){
   if(!allTemplates().some(t=>t.key===templateKey)) templateKey="standard";
   sel.value=templateKey;
 }
+// Palette — each adds a row you can then fully edit. "Custom text" lets you type
+// literally anything, with {placeholders}: {part} {po} {material} {spec} {size} {heat} {qty} {supplier}
+const PALETTE=[
+  {name:"✏ Custom text", make:()=>({type:"text",text:"",size:"md",align:"left"})},
+  {name:"Part / Job + PO", make:()=>({type:"text",text:"{part}     PO {po}",size:"lg",align:"left"})},
+  {name:"Material + Spec", make:()=>({type:"text",text:"{material}  ·  {spec}",size:"md",align:"left"})},
+  {name:"Size", make:()=>({type:"text",text:"{size}",size:"md",align:"left"})},
+  {name:"Heat # (big)", make:()=>({type:"text",text:"HEAT {heat}",size:"xl",align:"left"})},
+  {name:"Heat # + Qty row", make:()=>({type:"pair",left:"heat",right:"qty",size:"lg",labels:true})},
+  {name:"Qty (big)", make:()=>({type:"text",text:"QTY {qty}",size:"lg",align:"left"})},
+  {name:"Supplier", make:()=>({type:"text",text:"{supplier}",size:"sm",align:"left"})},
+  {name:"── Divider ──", make:()=>({type:"divider"})},
+  {name:"Barcode — Heat #", make:()=>({type:"barcode",raw:"heat"})},
+  {name:"Barcode — PO #", make:()=>({type:"barcode",raw:"po"})},
+  {name:"QR — Heat #", make:()=>({type:"qr",raw:"heat"})},
+  {name:"QR — full info", make:()=>({type:"qr",raw:"all"})},
+];
 function openTemplateEditor(key){
   const existing=customTemplates().find(t=>t.key===key);
-  tplEdit = existing ? {key:existing.key,name:existing.name,blocks:existing.blocks.slice()}
-                     : {key:null,name:"",blocks:["partpo","divider","material","size","divider","heatqty"]};
+  tplEdit = existing ? {key:existing.key,name:existing.name,rows:JSON.parse(JSON.stringify(templateRows(existing)))}
+                     : {key:null,name:"",rows:[{type:"text",text:"{part}     PO {po}",size:"lg",align:"left"},{type:"divider"},{type:"text",text:"{material}  ·  {spec}",size:"md",align:"left"},{type:"text",text:"{size}",size:"md",align:"left"},{type:"divider"},{type:"pair",left:"heat",right:"qty",size:"lg",labels:true}]};
   document.getElementById("tplTitle").textContent=existing?"Edit template":"New template";
   document.getElementById("tplName").value=tplEdit.name;
   document.getElementById("tplDelete").style.display=existing?"inline-flex":"none";
   renderTplEditor();
   document.getElementById("tplOverlay").classList.add("show");
 }
+function tplUpdatePreview(){
+  const rec=previewRec||DEMO[0];
+  document.getElementById("tplPreview").innerHTML=`<img class="dymo-img" src="${drawStickerCanvas(rec,tplEdit.rows)}" alt="preview">`;
+}
+let _tplDrag=null;
 function renderTplEditor(){
   const host=document.getElementById("tplBlocks");
-  document.getElementById("tplEmpty").style.display=tplEdit.blocks.length?"none":"inline";
-  host.innerHTML=tplEdit.blocks.map((bk,i)=>`<div class="te-block"><span class="nm">${esc(BLOCKS[bk]?BLOCKS[bk].name:bk)}</span>`+
-    `<button data-mv="${i}:-1"${i===0?" disabled":""}>↑</button>`+
-    `<button data-mv="${i}:1"${i===tplEdit.blocks.length-1?" disabled":""}>↓</button>`+
-    `<button class="rm" data-rm="${i}">✕</button></div>`).join("");
-  host.querySelectorAll("[data-mv]").forEach(b=>b.onclick=()=>{const p=b.dataset.mv.split(":"),i=+p[0],j=i+ +p[1];if(j<0||j>=tplEdit.blocks.length)return;const a=tplEdit.blocks;[a[i],a[j]]=[a[j],a[i]];renderTplEditor();});
-  host.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{tplEdit.blocks.splice(+b.dataset.rm,1);renderTplEditor();});
+  document.getElementById("tplEmpty").style.display=tplEdit.rows.length?"none":"inline";
+  const sizeSel=(i,v)=>`<select class="te-size" data-i="${i}">`+["xl","lg","md","sm"].map(s=>`<option value="${s}"${s===v?" selected":""}>${s.toUpperCase()}</option>`).join("")+`</select>`;
+  const alignSel=(i,v)=>`<select class="te-align" data-i="${i}">`+[["left","◧ Left"],["center","▣ Center"],["right","◨ Right"]].map(([s,l])=>`<option value="${s}"${s===(v||"left")?" selected":""}>${l}</option>`).join("")+`</select>`;
+  const fieldSel=(i,v,opts)=>`<select class="te-raw" data-i="${i}">`+opts.map(([s,l])=>`<option value="${s}"${s===v?" selected":""}>${l}</option>`).join("")+`</select>`;
+  host.innerHTML=tplEdit.rows.map((r,i)=>{
+    let mid="";
+    if(r.type==="text") mid=`<input class="te-txt" data-i="${i}" value="${esc(r.text||"")}" placeholder="Type anything… {heat} {po} {material}…">${sizeSel(i,r.size)}${alignSel(i,r.align)}`;
+    else if(r.type==="pair") mid=`<span class="nm">Heat # + Qty (two columns)</span>${sizeSel(i,r.size)}`;
+    else if(r.type==="divider") mid=`<span class="nm">── Divider line ──</span>`;
+    else if(r.type==="barcode") mid=`<span class="nm">Barcode</span>${fieldSel(i,r.raw,[["heat","Heat #"],["po","PO #"],["part","Part"]])}`;
+    else if(r.type==="qr") mid=`<span class="nm">QR code</span>${fieldSel(i,r.raw,[["heat","Heat #"],["po","PO #"],["all","Full info"]])}`;
+    return `<div class="te-block" draggable="true" data-i="${i}"><span class="te-grip">⠿</span>${mid}<button class="rm" data-rm="${i}">✕</button></div>`;
+  }).join("");
+  // controls
+  host.querySelectorAll(".te-txt").forEach(inp=>inp.oninput=()=>{ tplEdit.rows[+inp.dataset.i].text=inp.value; tplUpdatePreview(); });
+  host.querySelectorAll(".te-size").forEach(s=>s.onchange=()=>{ tplEdit.rows[+s.dataset.i].size=s.value; tplUpdatePreview(); });
+  host.querySelectorAll(".te-align").forEach(s=>s.onchange=()=>{ tplEdit.rows[+s.dataset.i].align=s.value; tplUpdatePreview(); });
+  host.querySelectorAll(".te-raw").forEach(s=>s.onchange=()=>{ tplEdit.rows[+s.dataset.i].raw=s.value; tplUpdatePreview(); });
+  host.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{ tplEdit.rows.splice(+b.dataset.rm,1); renderTplEditor(); });
+  // drag & drop reorder
+  host.querySelectorAll(".te-block").forEach(bl=>{
+    bl.ondragstart=e=>{ _tplDrag=+bl.dataset.i; bl.classList.add("dragging"); e.dataTransfer.effectAllowed="move"; try{e.dataTransfer.setData("text","");}catch(_){} };
+    bl.ondragend=()=>{ _tplDrag=null; host.querySelectorAll(".te-block").forEach(b=>b.classList.remove("dragging","drop-into")); };
+    bl.ondragover=e=>{ e.preventDefault(); bl.classList.add("drop-into"); };
+    bl.ondragleave=()=>bl.classList.remove("drop-into");
+    bl.ondrop=e=>{ e.preventDefault(); const to=+bl.dataset.i; if(_tplDrag!=null&&_tplDrag!==to){ const a=tplEdit.rows; const [m]=a.splice(_tplDrag,1); a.splice(to,0,m); renderTplEditor(); } };
+  });
+  // palette
   const pal=document.getElementById("tplPalette");
-  pal.innerHTML=Object.entries(BLOCKS).map(([k,v])=>`<button data-add="${k}">+ ${esc(v.name)}</button>`).join("");
-  pal.querySelectorAll("[data-add]").forEach(b=>b.onclick=()=>{tplEdit.blocks.push(b.dataset.add);renderTplEditor();});
-  const rec=previewRec||DEMO[0];
-  const rows=tplEdit.blocks.map(bk=>BLOCKS[bk]&&BLOCKS[bk].row).filter(Boolean);
-  document.getElementById("tplPreview").innerHTML=`<img class="dymo-img" src="${drawStickerCanvas(rec,rows)}" alt="preview">`;
+  pal.innerHTML=PALETTE.map((p,i)=>`<button data-pi="${i}">+ ${esc(p.name)}</button>`).join("");
+  pal.querySelectorAll("[data-pi]").forEach(b=>b.onclick=()=>{ tplEdit.rows.push(PALETTE[+b.dataset.pi].make()); renderTplEditor(); });
+  tplUpdatePreview();
 }
 function saveTemplate(){
-  if(!tplEdit.blocks.length){ toast("Add at least one block","err"); return; }
+  if(!tplEdit.rows.length){ toast("Add at least one block","err"); return; }
   const name=document.getElementById("tplName").value.trim()||"My template";
   const custom=customTemplates();
-  if(tplEdit.key){ const t=custom.find(c=>c.key===tplEdit.key); if(t){t.name=name;t.blocks=tplEdit.blocks.slice();} }
-  else { tplEdit.key="c_"+Date.now(); custom.push({key:tplEdit.key,name,blocks:tplEdit.blocks.slice()}); }
+  if(tplEdit.key){ const t=custom.find(c=>c.key===tplEdit.key); if(t){t.name=name;t.rows=tplEdit.rows;delete t.blocks;} }
+  else { tplEdit.key="c_"+Date.now(); custom.push({key:tplEdit.key,name,rows:tplEdit.rows}); }
   saveCustomTemplates(custom);
   templateKey=tplEdit.key; lsSet("cl_tpl",templateKey);
   refreshTemplatePicker();
