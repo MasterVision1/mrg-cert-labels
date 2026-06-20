@@ -83,7 +83,7 @@ header{
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(22,163,74,.5)}70%{box-shadow:0 0 0 7px rgba(22,163,74,0)}100%{box-shadow:0 0 0 0 rgba(22,163,74,0)}}
 
 /* ---------- Layout ---------- */
-main{flex:1;display:grid;grid-template-columns:1fr 380px;gap:18px;min-height:0;padding:4px 24px 20px}
+main{flex:1;display:grid;grid-template-columns:1fr 380px;grid-template-rows:minmax(0,1fr);gap:18px;min-height:0;padding:4px 24px 20px}
 .list-col{display:flex;flex-direction:column;min-height:0}
 .list-head{display:flex;align-items:center;gap:12px;padding:6px 8px 10px;color:var(--ink3);font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase}
 .list-head .selall{margin-left:auto;display:flex;align-items:center;gap:7px;cursor:pointer;color:var(--primary);text-transform:none;letter-spacing:0;font-size:12.5px;font-weight:700}
@@ -143,6 +143,10 @@ aside{display:flex;flex-direction:column;gap:14px;min-height:0;overflow:auto;pad
 .sticker .sdiv{height:2px;background:#000;opacity:.13;margin:14px 0}
 .sticker .smat{font-size:26px;font-weight:700;line-height:1.25}
 .sticker .ssize{font-size:23px;font-weight:600;color:#1a1a1a;margin-top:4px;line-height:1.2}
+.sticker .sbc{display:flex;align-items:stretch;height:46px;margin-top:14px;gap:0}
+.sticker .sbc i{display:inline-block;background:#000;height:100%}
+.sticker .sbc span{display:inline-block;background:#fff;height:100%}
+.sticker .sbcv{font-size:16px;font-weight:700;letter-spacing:3px;text-align:center;margin-top:3px;font-family:'Courier New',monospace}
 
 .print-status{display:flex;align-items:center;gap:9px;padding:11px 14px;border-radius:10px;font-weight:600;font-size:13px;cursor:pointer;transition:var(--ease) .15s}
 .print-status.ok{background:var(--green-soft);color:#0f7a37;border:1px solid #bfe6cd}
@@ -221,6 +225,9 @@ kbd{background:var(--canvas-mute);border:1px solid var(--line);border-bottom-wid
 .pdf-wrap{flex:1;min-height:420px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--canvas-mute);position:relative}
 .pdf-wrap iframe{width:100%;height:100%;border:none;display:block}
 .pdf-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--ink3);text-align:center;padding:24px;font-size:13px}
+.pdf-loading{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--ink3);font-size:13px;font-weight:600;background:var(--canvas-mute);z-index:1}
+.pdf-loading .spin{width:30px;height:30px;border:3px solid var(--line);border-top-color:var(--primary);border-radius:50%;animation:spin 0.8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 @media(max-width:760px){.mb.two{grid-template-columns:1fr}.pdf-wrap{min-height:300px}}
 
 /* ---------- Toast ---------- */
@@ -377,8 +384,8 @@ const DEMO = [
 ];
 
 /* ========================= STATE ========================= */
-let RECORDS=[], view="ready", selected=new Set(), printerName=null, dymoOk=false, dymoReachable=false, modalRec=null, knownIds=new Set();
-let selLabelKey=null, barcodeOn=false, barcodeField="heat", copies=1;
+let RECORDS=[], view="ready", selected=new Set(), printerName=null, dymoOk=false, dymoReachable=false, modalRec=null, knownIds=new Set(), liveData=false;
+let selLabelKey=null, barcodeOn=false, barcodeField="heat", copies=1, previewRec=null;
 function currentLabel(){ return CONFIG.labelTypes.find(l=>l.key===(selLabelKey||CONFIG.defaultLabelKey)) || CONFIG.labelTypes[0]; }
 
 /* ========================= DATA ========================= */
@@ -387,9 +394,10 @@ async function loadRecords(initial){
   try{
     const r = await fetch(CONFIG.apiBase+CONFIG.labelsPath+"?status=all&top=500",{headers:{Accept:"application/json"}});
     if(!r.ok) throw 0; recs = await r.json();
+    liveData=true;
     document.getElementById("liveLabel").textContent="Live · connected";
   }catch(e){
-    recs = DEMO.slice();
+    recs = DEMO.slice(); liveData=false;
     document.getElementById("liveLabel").textContent="Demo data (backend not wired)";
   }
   const fresh=new Set();
@@ -603,11 +611,22 @@ function fields(rec){
 }
 // One clean sticker, separated zones (ID · material · heat/qty). Content lives in
 // .sticker-inner and is scaled to fit the label box by fitSticker().
+// A barcode-style strip (representative; the real Code128 is rendered by DYMO at
+// print). Bar widths are derived from the value so it looks like a real barcode.
+function barcodeBars(val){
+  let h=""; const s=String(val||"");
+  for(let i=0;i<s.length;i++){ const c=s.charCodeAt(i);
+    h+=`<i style="width:${(c%3)+1}px"></i><span style="width:${((c>>2)%2)+1}px"></span><i style="width:${((c>>1)%2)+2}px"></i><span style="width:1px"></span>`;
+  }
+  return h;
+}
 function stickerHtml(rec){
   const f=fields(rec);
   const matLine=[f.material,f.spec].filter(Boolean).join("  ·  ");
   const headline = f.part || (f.po?`PO ${f.po}`:"—");
   const showPo = f.part && f.po;   // only show the PO chip when part is the headline
+  const bcVal = barcodeField==="po"?f.po:f.heat;
+  const showBc = barcodeOn && bcVal;
   return `<div class="sticker"><div class="sticker-inner">`+
     `<div class="srow"><span class="big">${esc(headline)}</span>`+
       `${showPo?`<span class="kv"><i>PO</i>${esc(f.po)}</span>`:""}</div>`+
@@ -618,6 +637,7 @@ function stickerHtml(rec){
     `${(f.heat||f.qty)?`<div class="srow">`+
       `${f.heat?`<span class="kv"><i>Heat</i>${esc(f.heat)}</span>`:"<span></span>"}`+
       `${f.qty?`<span class="kv"><i>Qty</i>${esc(f.qty)}</span>`:""}</div>`:""}`+
+    `${showBc?`<div class="sbc">${barcodeBars(bcVal)}</div><div class="sbcv">${esc(bcVal)}</div>`:""}`+
     `</div></div>`;
 }
 // Size the label box to the selected label's aspect ratio, then scale the inner
@@ -634,6 +654,7 @@ function fitSticker(box){
   inner.style.transform=`translate(-50%,-50%) scale(${s})`;
 }
 function showPreview(rec){
+  previewRec=rec;
   const stage=document.getElementById("stage"), host=document.getElementById("preview");
   host.innerHTML=stickerHtml(rec);
   requestAnimationFrame(()=>fitSticker(host));
@@ -669,10 +690,11 @@ function openModal(rec){
   });
   // source cert PDF
   const wrap=document.getElementById("pdfWrap");
-  if(CONFIG.apiBase && rec.id && !String(rec.id).startsWith("d")){
-    wrap.innerHTML=`<iframe src="${CONFIG.apiBase}/api/labels/pdf?id=${encodeURIComponent(rec.id)}" title="cert packet"></iframe>`;
+  if(liveData && CONFIG.apiBase && rec.id){
+    wrap.innerHTML=`<div class="pdf-loading" id="pdfLoading"><div class="spin"></div><div>Loading source packet…</div></div>`+
+      `<iframe class="pdf-frame" src="${CONFIG.apiBase}/api/labels/pdf?id=${encodeURIComponent(rec.id)}" title="cert packet" onload="var l=document.getElementById('pdfLoading'); if(l) l.remove();"></iframe>`;
   }else{
-    wrap.innerHTML=`<div class="pdf-empty">📄<div>The source cert packet will show here once the backend is connected.</div></div>`;
+    wrap.innerHTML=`<div class="pdf-empty">📄<div>${liveData?"No source PDF found for this cert.":"Source packet shows here on the live site (this is demo data)."}</div></div>`;
   }
   document.getElementById("saveEdits").style.display="none";
   document.getElementById("editBadge").style.display="none";
@@ -730,9 +752,10 @@ selLabelKey=CONFIG.defaultLabelKey;
   const ls=document.getElementById("labelSel");
   ls.innerHTML=CONFIG.labelTypes.map(l=>`<option value="${l.key}">${esc(l.name)}</option>`).join("");
   ls.value=selLabelKey;
-  ls.onchange=()=>{ selLabelKey=ls.value; if(modalRec) renderModalSticker(); };
-  document.getElementById("bcOn").onchange=e=>{ barcodeOn=e.target.checked; if(modalRec) renderModalSticker(); };
-  document.getElementById("bcField").onchange=e=>{ barcodeField=e.target.value; if(barcodeOn&&modalRec) renderModalSticker(); };
+  const refresh=()=>{ if(previewRec) showPreview(previewRec); if(modalRec) renderModalSticker(); };
+  ls.onchange=()=>{ selLabelKey=ls.value; refresh(); };
+  document.getElementById("bcOn").onchange=e=>{ barcodeOn=e.target.checked; refresh(); };
+  document.getElementById("bcField").onchange=e=>{ barcodeField=e.target.value; refresh(); };
   document.getElementById("copies").onchange=e=>{ copies=Math.max(1,Math.min(50,parseInt(e.target.value)||1)); e.target.value=copies; };
 })();
 
