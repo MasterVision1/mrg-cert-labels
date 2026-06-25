@@ -445,10 +445,12 @@ const CONFIG = {
   // (landscape: wIn = long side). Every entry validated against the live service
   // WITH a printer connected (RenderLabel + PrintLabel both 200).
   labelTypes: [
-    { key:"largeaddress", name:"Large Address (30321)", labelName:"LargeAddress", wIn:3.5, hIn:1.4 },
     { key:"address",      name:"Address (30252)",       labelName:"Address",      wIn:3.5, hIn:1.125 },
+    { key:"largeaddress", name:"Large Address (30321)", labelName:"LargeAddress", wIn:3.5, hIn:1.4 },
+    { key:"shipping",     name:"Shipping (30256)",      labelName:"Shipping",     wIn:4.0, hIn:2.3125 },
+    { key:"filefolder",   name:"File Folder (30327)",   labelName:"FileFolder",   wIn:3.4375, hIn:0.5625 },
   ],
-  defaultLabelKey: "largeaddress",
+  defaultLabelKey: "address",
 };
 
 /* ========================= DEMO DATA ========================= */
