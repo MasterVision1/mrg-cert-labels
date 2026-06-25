@@ -8,6 +8,65 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/icons/icon-16.png">
 <link rel="apple-touch-icon" href="/icons/icon-180.png">
 <link rel="manifest" href="/manifest.json">
+<!-- ════ MRG App Store install bridge ════
+     Registers the SW (Chrome needs one to offer install). When opened with
+     ?install=1 from the store, takes over the page with a real Install button
+     (user gesture → reliable prompt — a silent auto prompt() is blocked by
+     Chrome), tells the store on success so the card flips to Installed, then
+     lands in the app. Normal loads just register the SW. -->
+<script>
+(function () {
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () { navigator.serviceWorker.register('/sw.js').catch(function () {}); });
+  }
+  function installFlag() {
+    try { return new URLSearchParams(location.search).get('install') === '1' || location.hash === '#install'; }
+    catch (e) { return false; }
+  }
+  if (!installFlag()) return;
+  var APP_ID = 'cert-label-station', APP_NAME = 'Cert Label Station', DEST = '/', ACCENT = '#1B4FA8';
+  var hide = document.createElement('style');
+  hide.textContent = 'html,body{margin:0;padding:0;background:#fff;overflow:hidden}body>*{display:none!important}';
+  document.documentElement.appendChild(hide);
+  function notifyOpener() {
+    try { if (window.opener && !window.opener.closed) window.opener.postMessage({ type: 'mrg-app-installed', appId: APP_ID }, '*'); } catch (e) {}
+  }
+  function isStandalone() { return (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true; }
+  var dp = null;
+  function fire() { if (!dp) return; try { dp.prompt(); if (dp.userChoice) dp.userChoice.catch(function(){}); } catch (_) {} }
+  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); dp = e; fire(); });
+  window.addEventListener('appinstalled', function () {
+    notifyOpener();
+    var sub = document.getElementById('mrg-ins-sub'), btn = document.getElementById('mrg-ins-btn');
+    if (sub) sub.textContent = APP_NAME + ' was added to your computer.';
+    if (btn) { btn.textContent = '✓ Installed'; btn.disabled = true; }
+    setTimeout(function(){ location.replace(DEST); }, 1000);
+  });
+  function render() {
+    if (document.getElementById('mrg-ins-overlay')) return;
+    var ov = document.createElement('div');
+    ov.id = 'mrg-ins-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:radial-gradient(120% 120% at 50% 0%, ' + ACCENT + '22, #fff 62%)';
+    ov.innerHTML = '<div style="text-align:center;max-width:340px;padding:28px">'
+      + '<img src="/icons/icon-192.png" onerror="this.style.display=\'none\'" alt="" width="96" height="96" style="border-radius:22px;box-shadow:0 10px 30px -8px ' + ACCENT + '66;margin-bottom:18px">'
+      + '<h1 style="font-size:22px;margin:0 0 6px;color:#0f172a">Install ' + APP_NAME + '</h1>'
+      + '<p id="mrg-ins-sub" style="font-size:14px;color:#64748b;margin:0 0 22px;line-height:1.5">Adds ' + APP_NAME + ' to your computer so it opens in its own window, like a normal app.</p>'
+      + '<button id="mrg-ins-btn" type="button" style="width:100%;padding:13px 18px;border:0;border-radius:12px;background:' + ACCENT + ';color:#fff;font-size:15px;font-weight:700;cursor:pointer">Install ' + APP_NAME + '</button>'
+      + '<p id="mrg-ins-hint" style="font-size:12.5px;color:#94a3b8;margin:16px 0 0;line-height:1.5"></p>'
+      + '<a href="' + DEST + '" style="display:inline-block;margin-top:14px;font-size:13px;color:' + ACCENT + ';text-decoration:none">Open in browser instead →</a>'
+      + '</div>';
+    document.documentElement.appendChild(ov);
+    var btn = document.getElementById('mrg-ins-btn');
+    if (isStandalone()) { document.getElementById('mrg-ins-sub').textContent = APP_NAME + ' is already installed.'; btn.textContent = 'Open ' + APP_NAME; }
+    btn.addEventListener('click', function () {
+      if (isStandalone()) { location.replace(DEST); return; }
+      if (dp) { fire(); return; }
+      document.getElementById('mrg-ins-hint').textContent = "If no dialog appears, click the install icon in your browser's address bar (Chrome / Edge).";
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', render); else render();
+})();
+</script>
 <meta name="theme-color" content="#1B4FA8">
 <meta name="apple-mobile-web-app-title" content="Cert Labels">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -58,9 +117,6 @@ header{
 .logo .txt b{font-size:15px;font-weight:800;letter-spacing:-.2px;display:block;line-height:1.1}
 .logo .txt span{font-size:11.5px;color:var(--ink3);font-weight:600}
 
-.install-btn{margin-left:auto;display:inline-flex;align-items:center;gap:7px;padding:8px 16px;border-radius:var(--r-pill);border:none;background:var(--primary);color:#fff;font-weight:700;font-size:13px;cursor:pointer;box-shadow:0 3px 10px rgba(27,79,168,.35);transition:var(--ease) .15s}
-.install-btn:hover{background:var(--primary-dark);transform:translateY(-1px)}
-.install-btn+.dymo-pill{margin-left:14px}
 .dymo-pill{
   margin-left:auto; display:flex; align-items:center; gap:9px; padding:7px 12px; border-radius:var(--r-pill);
   background:var(--canvas-mute); border:1px solid var(--line); cursor:pointer; transition:var(--ease) .18s; font-weight:600; font-size:13px;
@@ -311,7 +367,6 @@ kbd{background:var(--canvas-mute);border:1px solid var(--line);border-bottom-wid
     <div class="logo-div"></div>
     <div class="txt"><b>Cert Label Station</b></div>
   </div>
-  <button class="install-btn" id="installBtn" style="display:none" title="Install Cert Label Station on this computer">⤓ Install app</button>
   <div class="dymo-pill" id="dymoPill" title="Click to re-check / allow DYMO access">
     <span class="dot"></span>
     <span id="dymoText">Checking DYMO…</span>
@@ -1295,32 +1350,8 @@ customH = Math.max(0.3, Math.min(6, parseFloat(lsGet("cl_ch","1.25"))||1.25));
   document.getElementById("copies").onchange=e=>{ copies=Math.max(1,Math.min(50,parseInt(e.target.value)||1)); e.target.value=copies; lsSet("cl_copies",String(copies)); refresh(); };
 })();
 
-/* ===== PWA install (makes "Install" in the MRG App Store actually install) ===== */
-(function(){
-  if("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(()=>{});
-  const APP_ID="cert-label-station";
-  const btn=document.getElementById("installBtn");
-  const standalone=matchMedia("(display-mode: standalone)").matches || navigator.standalone;
-  const wantInstall=new URLSearchParams(location.search).get("install")==="1";
-  let deferred=null;
-  async function doInstall(){
-    if(!deferred) return;
-    deferred.prompt();
-    try{ await deferred.userChoice; }catch(e){}
-    deferred=null; if(btn) btn.style.display="none";
-  }
-  window.addEventListener("beforeinstallprompt",e=>{
-    e.preventDefault(); deferred=e;
-    if(btn && !standalone) btn.style.display="inline-flex";
-    if(wantInstall){ doInstall(); toast("Click ‘Install’ to add this app to your computer","" ); }
-  });
-  window.addEventListener("appinstalled",()=>{
-    if(btn) btn.style.display="none";
-    try{ if(window.opener) window.opener.postMessage({type:"mrg-app-installed",appId:APP_ID},"*"); }catch(e){}
-    toast("Installed on this computer ✓","ok");
-  });
-  if(btn) btn.onclick=doInstall;
-})();
+/* PWA install is handled by the App Store install bridge in <head>
+   (#mrg-ins-overlay). The service worker is registered there too. */
 
 loadRecords(true); checkDymo();
 if(DEMO.length) showPreview(DEMO[0]);
