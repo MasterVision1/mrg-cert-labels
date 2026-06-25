@@ -668,6 +668,21 @@ const DYMO_TEXT={
   off:{pill:"Connect DYMO", banner:()=>"DYMO not connected — click to allow", btn:()=>"🖨 Connect DYMO first"},
 };
 async function dget(p){const r=await fetch(CONFIG.dymoBase+p);return await r.text();}
+// "First print is sometimes blank" = cold start: the canvas fonts aren't loaded yet
+// and/or the DYMO image rasterizer hasn't warmed. Prime both once the printer is up.
+let dymoWarmed=false;
+async function fontsReady(){ try{ if(document.fonts&&document.fonts.ready) await document.fonts.ready; }catch(e){} }
+async function warmDymo(){
+  if(dymoWarmed) return; dymoWarmed=true;
+  try{
+    await fontsReady();
+    const rec=previewRec||RECORDS.find(r=>!r.printed)||DEMO[0];
+    if(!rec){ dymoWarmed=false; return; }
+    drawStickerCanvas(rec);   // prime canvas + font metrics on this machine
+    const body=new URLSearchParams({labelXml:buildLabelXml(rec),renderParamsXml:""}).toString();
+    await fetch(CONFIG.dymoBase+"/RenderLabel",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body}); // wakes the rasterizer
+  }catch(e){ dymoWarmed=false; }
+}
 async function checkDymo(){
   const sel=document.getElementById("printerSel");
   try{
@@ -678,7 +693,7 @@ async function checkDymo(){
     const printers=[...doc.querySelectorAll("LabelWriterPrinter, Printer")].map(p=>p.querySelector("Name")?.textContent?.trim()).filter(Boolean);
     if(printers.length){
       sel.innerHTML=printers.map(n=>`<option>${esc(n)}</option>`).join(""); sel.style.display=printers.length>1?"inline":"none";
-      printerName=printers[0]; dymoOk=true; dymoState="ok";
+      printerName=printers[0]; dymoOk=true; dymoState="ok"; warmDymo();
     }else{ sel.style.display="none"; printerName=null; dymoOk=false; dymoState="noprinter"; }
   }catch(e){ sel.style.display="none"; printerName=null; dymoOk=false; dymoReachable=false; dymoState="off"; }
   paintDymo();
@@ -885,8 +900,19 @@ function drawStickerCanvas(rec, rowsOverride){
   const f=fields(rec), A="Arial", pad=Math.round(H*0.10), cw=W-pad*2;
   const wrap=(text,font,maxW)=>{ x.font=font; const words=String(text).split(/\s+/),out=[]; let cur="";
     for(const w of words){ const t=cur?cur+" "+w:w; if(x.measureText(t).width>maxW&&cur){out.push(cur);cur=w;}else cur=t;} if(cur)out.push(cur); return out; };
-  try{ if(rowsOverride) drawRows({x,W,H,f,A,pad,cw,wrap}, rowsOverride); else currentTemplate().draw({x,W,H,f,A,pad,cw,wrap}); }catch(e){ tplStandard({x,W,H,f,A,pad,cw,wrap}); }
+  const paint=()=>{ try{ if(rowsOverride) drawRows({x,W,H,f,A,pad,cw,wrap}, rowsOverride); else currentTemplate().draw({x,W,H,f,A,pad,cw,wrap}); }catch(e){ tplStandard({x,W,H,f,A,pad,cw,wrap}); } };
+  paint();
+  // Safety net for the "first label is blank" cold-start: if nothing got drawn
+  // (font metrics not ready on the very first paint), clear and paint once more.
+  try{ if(isCanvasBlank(x,W,H)){ x.fillStyle="#fff"; x.fillRect(0,0,W,H); paint(); } }catch(e){}
   return cv.toDataURL("image/png");
+}
+// True if the canvas has no dark ink (all white) — i.e. a blank label.
+function isCanvasBlank(ctx,W,H){
+  const sx=Math.max(1,Math.floor(W/60)), sy=Math.max(1,Math.floor(H/60));
+  const d=ctx.getImageData(0,0,W,H).data;
+  for(let y=0;y<H;y+=sy){ for(let xx=0;xx<W;xx+=sx){ const i=(y*W+xx)*4; if(d[i]<200||d[i+1]<200||d[i+2]<200) return false; } }
+  return true;
 }
 // Standard: part/PO header · rule · material/spec/size · rule · HEAT + QTY footer
 function tplStandard({x,W,H,f,A,pad,cw,wrap}){
@@ -987,6 +1013,7 @@ function buildLabelSetXml(rec){
 // thing that changes how many print per cert.
 function stickerCount(recs){ return recs.length*(copies||1); }
 async function dymoPrintOne(rec, n){
+  await fontsReady();                 // never print before the label's fonts are loaded
   const useTpl=!!CONFIG.labelTemplateXml;
   const body=new URLSearchParams();
   body.set("printerName",printerName);
