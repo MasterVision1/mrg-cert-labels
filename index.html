@@ -1015,9 +1015,17 @@ async function printRecs(recs){
   for(const rec of recs){ const n=copies||1; try{await dymoPrintOne(rec,n); okCerts++; stickers+=n; sent.push(rec);}catch(e){fail++;console.error(e);} }
   selected.clear(); render();
   if(!okCerts){ toast("Couldn't reach the printer — nothing sent.","err"); return; }
-  // PrintLabel returns success the moment the job is QUEUED — the DYMO service has no
-  // API to tell us the label physically printed (PaperOut/jams surface only at Windows).
-  // So we confirm with the operator before filing anything into History.
+  // Happy path — every job queued to the DYMO cleanly: file straight to History,
+  // no prompt. (PrintLabel only confirms the job was QUEUED; paper-out/jams surface
+  // at Windows, not via the API — but the operator is at the printer and will catch
+  // a bad print, so we don't interrupt every successful run.)
+  if(fail===0){
+    await markPrinted(sent.map(r=>r.id));
+    toast(`Filed ${sent.length} to History`,"ok");
+    render();
+    return;
+  }
+  // A job failed to send — surface it and let the operator decide before filing the rest.
   const printed=await confirmPrinted(stickers);
   if(printed){ await markPrinted(sent.map(r=>r.id)); toast(`Filed ${sent.length} to History`,"ok"); }
   else { toast("Kept in Ready to Print — fix the printer, then reprint",""); }
