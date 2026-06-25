@@ -757,9 +757,14 @@ function tplStandard({x,W,H,f,A,pad,cw,wrap}){
   const avail=H-pad*2, sc=total()>avail?avail/total():1;
   fH*=sc; fB*=sc; fS*=sc; fK*=sc; fL*=sc; gap*=sc;
   let y=pad+Math.max(0,(avail-total())/2);
-  x.textBaseline="top"; x.fillStyle="#000"; x.textAlign="left"; x.font=`800 ${fH}px ${A}`;
+  x.textBaseline="top"; x.fillStyle="#000"; x.textAlign="left";
+  const poTxt=(f.part&&f.po)?("PO "+f.po):"";
+  let poW=0; if(poTxt){ x.font=`800 ${fH*0.78}px ${A}`; poW=x.measureText(poTxt).width; }
+  const headMax=poTxt? cw-poW-W*0.03 : cw;   // leave room so part # never overlaps PO
+  let fHead=fH; x.font=`800 ${fHead}px ${A}`;
+  while(x.measureText(headline).width>headMax && fHead>10){ fHead-=2; x.font=`800 ${fHead}px ${A}`; }
   x.fillText(headline,pad,y);
-  if(f.part&&f.po){ x.textAlign="right"; x.font=`800 ${fH*0.78}px ${A}`; x.fillText("PO "+f.po,W-pad,y+fH*0.16); x.textAlign="left"; }
+  if(poTxt){ x.textAlign="right"; x.font=`800 ${fH*0.78}px ${A}`; x.fillText(poTxt,W-pad,y+fH*0.16); x.textAlign="left"; }
   y+=fH+gap; x.fillStyle="#000"; x.fillRect(pad,y,cw,rule); y+=rule+gap;
   x.font=`bold ${fB}px ${A}`; x.fillStyle="#000";
   for(const ln of matLines){ x.fillText(ln,pad,y); y+=fB*1.16; }
