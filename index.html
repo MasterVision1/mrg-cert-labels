@@ -430,6 +430,21 @@ kbd{background:var(--canvas-mute);border:1px solid var(--line);border-bottom-wid
   </div>
 </div>
 
+<div class="overlay" id="confirmOverlay">
+  <div class="modal" style="max-width:460px">
+    <div class="mh"><b>Did it print?</b></div>
+    <div class="mb">
+      <div id="confirmMsg" style="font-size:15px;color:var(--ink);line-height:1.5"></div>
+      <div class="set-hint" style="margin-top:10px">If the printer was out of paper or jammed, choose <b>No</b> — the cert stays in Ready to Print so you can fix it and reprint. Nothing is filed to History unless it actually printed.</div>
+    </div>
+    <div class="mf">
+      <span class="grow"></span>
+      <button class="btn-ghost" id="confirmNo" style="color:var(--red);border-color:#f3c9ce">No — keep in Ready</button>
+      <button class="btn-print" id="confirmYes">Yes — it printed</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -828,13 +843,32 @@ async function dymoPrintOne(rec, n){
   const r=await fetch(CONFIG.dymoBase+"/PrintLabel",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:body.toString()});
   if(!r.ok) throw new Error("HTTP "+r.status);
 }
+// Resolves true (printed) / false (keep) once the operator answers the confirm modal.
+function confirmPrinted(stickers){
+  return new Promise(resolve=>{
+    const ov=document.getElementById("confirmOverlay");
+    document.getElementById("confirmMsg").textContent=
+      `${stickers} sticker${stickers!==1?"s":""} sent to ${printerName}. Did ${stickers!==1?"they":"it"} come out of the printer correctly?`;
+    const done=v=>{ ov.classList.remove("show"); yes.onclick=no.onclick=ov.onclick=null; resolve(v); };
+    const yes=document.getElementById("confirmYes"), no=document.getElementById("confirmNo");
+    yes.onclick=()=>done(true); no.onclick=()=>done(false);
+    ov.onclick=e=>{ if(e.target.id==="confirmOverlay") done(false); };
+    ov.classList.add("show");
+  });
+}
 async function printRecs(recs){
   if(!dymoOk){ reconnectDymo(); return; }
-  let okCerts=0, stickers=0, fail=0;
-  for(const rec of recs){ const n=copies||1; try{await dymoPrintOne(rec,n); okCerts++; stickers+=n;}catch(e){fail++;console.error(e);} }
-  if(okCerts) await markPrinted(recs.slice(0,okCerts).map(r=>r.id));
-  toast(`${stickers} sticker${stickers!==1?"s":""} sent to ${printerName}`+(fail?` · ${fail} failed`:""),fail?"err":"ok");
+  let okCerts=0, stickers=0, fail=0; const sent=[];
+  for(const rec of recs){ const n=copies||1; try{await dymoPrintOne(rec,n); okCerts++; stickers+=n; sent.push(rec);}catch(e){fail++;console.error(e);} }
   selected.clear(); render();
+  if(!okCerts){ toast("Couldn't reach the printer — nothing sent.","err"); return; }
+  // PrintLabel returns success the moment the job is QUEUED — the DYMO service has no
+  // API to tell us the label physically printed (PaperOut/jams surface only at Windows).
+  // So we confirm with the operator before filing anything into History.
+  const printed=await confirmPrinted(stickers);
+  if(printed){ await markPrinted(sent.map(r=>r.id)); toast(`Filed ${sent.length} to History`,"ok"); }
+  else { toast("Kept in Ready to Print — fix the printer, then reprint",""); }
+  render();
 }
 
 /* ========================= RENDER ========================= */
@@ -1196,7 +1230,7 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeModal();docume
 // Shortcuts: "/" focuses search, Enter prints the current selection
 document.addEventListener("keydown",e=>{
   if(/^(input|select|textarea)$/i.test(e.target.tagName)) return;
-  if(document.getElementById("overlay").classList.contains("show")||document.getElementById("tplOverlay").classList.contains("show")) return;
+  if(["overlay","tplOverlay","confirmOverlay"].some(id=>document.getElementById(id).classList.contains("show"))) return;
   if(e.key==="/"){ e.preventDefault(); document.getElementById("q").focus(); }
   else if(e.key==="Enter" && selected.size){ e.preventDefault(); printRecs([...selected].map(id=>RECORDS.find(r=>r.id===id)).filter(Boolean)); }
 });
