@@ -252,6 +252,15 @@ aside{display:flex;flex-direction:column;gap:14px;min-height:0;overflow:auto;pad
 .set select,.set input[type=number]{border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-weight:600;color:var(--ink);background:var(--surf)}
 .set input[type=number]{width:72px}
 .set-hint{font-size:11.5px;color:var(--ink3);margin-top:-4px}
+.set-hint code{background:var(--canvas-mute);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:11.5px}
+.setup-summary{font-size:15px;font-weight:700;padding:11px 13px;border-radius:10px;margin-bottom:6px}
+.setup-summary.ok{background:var(--green-soft);color:var(--green)}
+.setup-summary.bad{background:#FFF4E5;color:#9A5B00}
+.setup-step{display:flex;gap:13px;align-items:flex-start;padding:14px 2px;border-top:1px solid var(--line)}
+.setup-ico{width:26px;height:26px;border-radius:50%;flex:0 0 26px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:#fff}
+.setup-ico.ok{background:var(--green)} .setup-ico.bad{background:var(--red)} .setup-ico.wait{background:var(--line-strong)}
+.setup-h{font-weight:800;font-size:15px;color:var(--ink)} .setup-d{color:var(--ink2);font-size:13px;margin-top:3px;line-height:1.45}
+.setup-actions{margin-top:10px} .setup-actions a{text-decoration:none;display:inline-block}
 .te-edit{margin-top:8px;width:100%;border:1px dashed var(--line-strong);background:var(--canvas-mute);color:var(--primary);border-radius:8px;padding:8px;font-weight:700;font-size:12.5px;cursor:pointer}
 .te-edit:hover{border-color:var(--primary);background:var(--primary-soft)}
 .te-label{font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
@@ -367,12 +376,45 @@ kbd{background:var(--canvas-mute);border:1px solid var(--line);border-bottom-wid
     <div class="logo-div"></div>
     <div class="txt"><b>Cert Label Station</b></div>
   </div>
-  <div class="dymo-pill" id="dymoPill" title="Click to re-check / allow DYMO access">
+  <div class="dymo-pill" id="dymoPill" title="Station setup — what this computer needs to print">
     <span class="dot"></span>
     <span id="dymoText">Checking DYMO…</span>
     <select id="printerSel" onclick="event.stopPropagation()" style="display:none"></select>
   </div>
 </header>
+
+<!-- Station setup: live check that this PC has everything needed to print -->
+<div class="overlay" id="setupOverlay">
+  <div class="modal" style="max-width:560px">
+    <div class="mh"><b>Station setup</b><button class="x" id="setupX">✕</button></div>
+    <div class="mb">
+      <div id="setupSummary" class="setup-summary"></div>
+      <div class="setup-step">
+        <div class="setup-ico" id="ico-dymo"></div>
+        <div class="setup-txt" style="flex:1">
+          <div class="setup-h">1 · DYMO Connect software</div>
+          <div class="setup-d" id="d-dymo"></div>
+          <div class="setup-actions" id="dymo-actions">
+            <a class="btn-print" id="dlDymo" href="https://www.dymo.com/support?cfid=user-guide" target="_blank" rel="noopener">⤓ Download DYMO Connect (free)</a>
+          </div>
+        </div>
+      </div>
+      <div class="setup-step">
+        <div class="setup-ico" id="ico-printer"></div>
+        <div class="setup-txt" style="flex:1">
+          <div class="setup-h">2 · DYMO printer</div>
+          <div class="setup-d" id="d-printer"></div>
+        </div>
+      </div>
+      <div class="set-hint" style="margin-top:12px">Installs in ~1 minute and starts automatically — no settings to change. IT can also install it with <code>winget install DYMO.DYMOConnect</code>. After installing, click <b>Re-check</b>.</div>
+    </div>
+    <div class="mf">
+      <span class="grow"></span>
+      <button class="btn-ghost" id="setupClose">Close</button>
+      <button class="btn-print" id="setupRecheck">↻ Re-check</button>
+    </div>
+  </div>
+</div>
 
 <div class="subbar">
   <div class="tabs">
@@ -655,6 +697,7 @@ function paintDymo(){
   el.innerHTML=`<span class="dot"></span> ${esc(t.banner(printerName))}<span class="arr">${dymoState==="ok"?"on this PC":"↻"}</span>`;
   updateActionBar();
   const mp=document.getElementById("modalPrint"); if(mp){mp.disabled=!dymoOk; mp.textContent=dymoOk?"🖨 Print this sticker":t.btn(1);}
+  paintSetup();   // keep the setup panel live if it's open
 }
 // Clicking status re-attempts the connection. If the browser blocked localhost access,
 // re-fetching re-triggers the "allow" prompt; otherwise we guide the user.
@@ -664,6 +707,34 @@ async function reconnectDymo(){
   if(dymoState==="off") setTimeout(()=>toast("Blocked? Click the 🔒 / ⓘ icon by the address bar → allow this site to access devices, then click here again","err"),700);
   else if(dymoState==="noprinter") toast("DYMO is connected — plug a label printer into this computer","");
 }
+
+/* ---- Station setup panel: shows whether this PC has everything to print ---- */
+function setStep(key, state, desc){   // state: "ok" | "bad" | "wait"
+  const ico=document.getElementById("ico-"+key);
+  ico.className="setup-ico "+state;
+  ico.textContent = state==="ok"?"✓":state==="wait"?"·":"!";
+  document.getElementById("d-"+key).textContent=desc;
+}
+function paintSetup(){
+  if(!document.getElementById("setupOverlay").classList.contains("show")) return;
+  const ready=dymoState==="ok";
+  const sum=document.getElementById("setupSummary");
+  sum.className="setup-summary "+(ready?"ok":"bad");
+  sum.textContent=ready?"✓ This station is ready to print.":"This station isn’t ready yet — finish the steps below.";
+  // 1) DYMO Connect software = is the local service reachable
+  setStep("dymo", dymoReachable?"ok":"bad",
+    dymoReachable?"Installed and running on this computer."
+      :"Not detected on this computer. Download it below, run the installer, then click Re-check (it starts on its own — nothing to open).");
+  document.getElementById("dymo-actions").style.display=dymoReachable?"none":"";
+  // 2) Printer connected
+  setStep("printer", dymoOk?"ok":(dymoReachable?"bad":"wait"),
+    dymoOk?("Connected — "+printerName)
+      :(dymoReachable?"No DYMO printer found. Plug your DYMO LabelWriter into this computer with the USB cable, then click Re-check."
+        :"Waiting on DYMO Connect (step 1) first."));
+}
+function openSetup(){ document.getElementById("setupOverlay").classList.add("show"); paintSetup(); }
+function closeSetup(){ document.getElementById("setupOverlay").classList.remove("show"); }
+async function recheckSetup(){ const b=document.getElementById("setupRecheck"); b.disabled=true; b.textContent="↻ Checking…"; await checkDymo(); paintSetup(); b.disabled=false; b.textContent="↻ Re-check"; if(dymoState==="ok") toast("All set — this station can print","ok"); }
 
 // The 4 sticker lines.
 function printLines(rec){
@@ -1292,8 +1363,12 @@ document.getElementById("clearSel").onclick=()=>{selected.clear();render();};
 document.getElementById("addTestBtn").onclick=addTestCert;
 document.getElementById("clearTestBtn").onclick=clearTestCerts;
 document.getElementById("printBtn").onclick=()=>printRecs([...selected].map(id=>RECORDS.find(r=>r.id===id)).filter(Boolean));
-document.getElementById("dymoPill").onclick=reconnectDymo;
-document.getElementById("printStatus").onclick=reconnectDymo;
+document.getElementById("dymoPill").onclick=openSetup;
+document.getElementById("printStatus").onclick=openSetup;
+document.getElementById("setupX").onclick=closeSetup;
+document.getElementById("setupClose").onclick=closeSetup;
+document.getElementById("setupRecheck").onclick=recheckSetup;
+document.getElementById("setupOverlay").onclick=e=>{if(e.target.id==="setupOverlay")closeSetup();};
 document.getElementById("modalX").onclick=closeModal;
 document.getElementById("modalClose2").onclick=closeModal;
 document.getElementById("overlay").onclick=e=>{if(e.target.id==="overlay")closeModal();};
@@ -1308,11 +1383,11 @@ document.getElementById("tplCancel").onclick=()=>document.getElementById("tplOve
 document.getElementById("tplOverlay").onclick=e=>{if(e.target.id==="tplOverlay")document.getElementById("tplOverlay").classList.remove("show");};
 document.getElementById("tplSave").onclick=saveTemplate;
 document.getElementById("tplDelete").onclick=deleteTemplate;
-document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeModal();document.getElementById("tplOverlay").classList.remove("show");}});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeModal();closeSetup();document.getElementById("tplOverlay").classList.remove("show");}});
 // Shortcuts: "/" focuses search, Enter prints the current selection
 document.addEventListener("keydown",e=>{
   if(/^(input|select|textarea)$/i.test(e.target.tagName)) return;
-  if(["overlay","tplOverlay","confirmOverlay"].some(id=>document.getElementById(id).classList.contains("show"))) return;
+  if(["overlay","tplOverlay","confirmOverlay","setupOverlay"].some(id=>document.getElementById(id).classList.contains("show"))) return;
   if(e.key==="/"){ e.preventDefault(); document.getElementById("q").focus(); }
   else if(e.key==="Enter" && selected.size){ e.preventDefault(); printRecs([...selected].map(id=>RECORDS.find(r=>r.id===id)).filter(Boolean)); }
 });
@@ -1353,7 +1428,10 @@ customH = Math.max(0.3, Math.min(6, parseFloat(lsGet("cl_ch","1.25"))||1.25));
 /* PWA install is handled by the App Store install bridge in <head>
    (#mrg-ins-overlay). The service worker is registered there too. */
 
-loadRecords(true); checkDymo();
+loadRecords(true);
+// First connection check; if this station isn't ready to print, surface the
+// setup panel automatically so they see exactly what's missing.
+checkDymo().then(()=>{ if(dymoState!=="ok") openSetup(); });
 if(DEMO.length) showPreview(DEMO[0]);
 setInterval(()=>loadRecords(false),CONFIG.pollMs);
 setInterval(checkDymo,15000);
