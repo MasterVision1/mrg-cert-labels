@@ -359,6 +359,14 @@ kbd{background:var(--canvas-mute);border:1px solid var(--line);border-bottom-wid
         <div class="set"><label>Template</label><select id="tplSel"></select>
           <button class="te-edit" id="tplEditBtn">✎ Build / edit templates</button></div>
         <div class="set"><label>Label size</label><select id="labelSel"></select></div>
+        <div class="set row" id="customSizeRow" style="display:none"><label>Size (in)</label>
+          <span style="display:inline-flex;align-items:center;gap:6px">
+            <input type="number" id="customW" step="0.05" min="0.5" max="6" style="width:64px" title="long side (feed direction)">
+            <span style="color:var(--muted);font-weight:700">×</span>
+            <input type="number" id="customH" step="0.05" min="0.3" max="6" style="width:64px" title="short side (across the roll)">
+          </span>
+        </div>
+        <div class="set-hint" id="customSizeHint" style="display:none">Measure one label with a ruler: <b>long side × short side</b>, in inches. Prints to any roll — no part number needed.</div>
         <div class="set row"><label>Copies</label><input type="number" id="copies" min="1" max="50" value="1"></div>
         <div class="set-hint">One label per cert. Increase to print duplicates.</div>
       </div>
@@ -471,6 +479,9 @@ const CONFIG = {
     { key:"largeaddress", name:"Large Address (30321)", labelName:"LargeAddress", wIn:3.5, hIn:1.4 },
     { key:"shipping",     name:"Shipping (30256)",      labelName:"Shipping",     wIn:4.0, hIn:2.3125 },
     { key:"filefolder",   name:"File Folder (30327)",   labelName:"FileFolder",   wIn:3.4375, hIn:0.5625 },
+    // Custom: matches any roll. labelName stays "Address" (the DYMO service rejects
+    // unknown names with a 400, but accepts a known name at an arbitrary size).
+    { key:"custom",       name:"Custom size…",          labelName:"Address",      wIn:2.25, hIn:1.25 },
   ],
   defaultLabelKey: "address",
 };
@@ -505,7 +516,12 @@ function addTestCert(){
 }
 function clearTestCerts(){ testCerts=[]; saveTestCerts(); selected.clear(); RECORDS=RECORDS.filter(r=>!String(r.id).startsWith("test-")); render(); loadRecords(false); toast("Test certs cleared",""); }
 let selLabelKey=null, barcodeOn=false, barcodeField="heat", copies=1, previewRec=null, templateKey="standard";
-function currentLabel(){ return CONFIG.labelTypes.find(l=>l.key===(selLabelKey||CONFIG.defaultLabelKey)) || CONFIG.labelTypes[0]; }
+let customW=2.25, customH=1.25;   // inches, for the "Custom size…" option
+function currentLabel(){
+  const key=selLabelKey||CONFIG.defaultLabelKey;
+  if(key==="custom"){ return { key:"custom", name:"Custom size…", labelName:"Address", wIn:customW, hIn:customH }; }
+  return CONFIG.labelTypes.find(l=>l.key===key) || CONFIG.labelTypes[0];
+}
 
 /* ========================= DATA ========================= */
 async function loadRecords(initial){
@@ -1249,6 +1265,8 @@ function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
 selLabelKey = (CONFIG.labelTypes.some(l=>l.key===lsGet("cl_label")) ? lsGet("cl_label") : CONFIG.defaultLabelKey);
 templateKey = lsGet("cl_tpl","standard");
 copies = Math.max(1, Math.min(50, parseInt(lsGet("cl_copies","1"))||1));
+customW = Math.max(0.5, Math.min(6, parseFloat(lsGet("cl_cw","2.25"))||2.25));
+customH = Math.max(0.3, Math.min(6, parseFloat(lsGet("cl_ch","1.25"))||1.25));
 (function initSettings(){
   const tpl=document.getElementById("tplSel");
   refreshTemplatePicker();   // includes built-in + custom; fixes templateKey if stale
@@ -1256,9 +1274,18 @@ copies = Math.max(1, Math.min(50, parseInt(lsGet("cl_copies","1"))||1));
   ls.innerHTML=CONFIG.labelTypes.map(l=>`<option value="${l.key}">${esc(l.name)}</option>`).join("");
   ls.value=selLabelKey;
   document.getElementById("copies").value=copies;
+  const cwI=document.getElementById("customW"), chI=document.getElementById("customH");
+  cwI.value=customW; chI.value=customH;
+  const toggleCustom=()=>{ const on=selLabelKey==="custom";
+    document.getElementById("customSizeRow").style.display=on?"":"none";
+    document.getElementById("customSizeHint").style.display=on?"":"none"; };
+  toggleCustom();
   const refresh=()=>{ if(previewRec) showPreview(previewRec); if(modalRec) renderModalSticker(); updateActionBar(); };
   tpl.onchange=()=>{ templateKey=tpl.value; lsSet("cl_tpl",templateKey); refresh(); };
-  ls.onchange=()=>{ selLabelKey=ls.value; lsSet("cl_label",selLabelKey); refresh(); };
+  ls.onchange=()=>{ selLabelKey=ls.value; lsSet("cl_label",selLabelKey); toggleCustom(); refresh(); };
+  const onCustom=()=>{ customW=Math.max(0.5,Math.min(6,parseFloat(cwI.value)||2.25)); customH=Math.max(0.3,Math.min(6,parseFloat(chI.value)||1.25));
+    lsSet("cl_cw",String(customW)); lsSet("cl_ch",String(customH)); refresh(); };
+  cwI.oninput=chI.oninput=onCustom;
   document.getElementById("copies").onchange=e=>{ copies=Math.max(1,Math.min(50,parseInt(e.target.value)||1)); e.target.value=copies; lsSet("cl_copies",String(copies)); refresh(); };
 })();
 
