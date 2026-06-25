@@ -395,7 +395,8 @@ kbd{background:var(--canvas-mute);border:1px solid var(--line);border-bottom-wid
           <div class="setup-h">1 · DYMO Connect software</div>
           <div class="setup-d" id="d-dymo"></div>
           <div class="setup-actions" id="dymo-actions">
-            <a class="btn-print" id="dlDymo" href="https://www.dymo.com/support?cfid=user-guide" target="_blank" rel="noopener">⤓ Download DYMO Connect (free)</a>
+            <a class="btn-print" id="dlDymo" href="https://download.dymo.com/dymo/Software/Win/DCDSetup1.5.1.20.exe">⤓ Download DYMO Connect</a>
+            <a id="dlDymoAll" href="https://www.dymo.com/support?cfid=user-guide" target="_blank" rel="noopener" style="display:block;margin-top:9px;font-size:12px;color:var(--primary);font-weight:700;text-decoration:none">Mac, or browse all versions →</a>
           </div>
         </div>
       </div>
@@ -1400,6 +1401,15 @@ document.getElementById("clearTestBtn").onclick=clearTestCerts;
 document.getElementById("printBtn").onclick=()=>printRecs([...selected].map(id=>RECORDS.find(r=>r.id===id)).filter(Boolean));
 document.getElementById("dymoPill").onclick=openSetup;
 document.getElementById("printStatus").onclick=openSetup;
+// Point the download button at the right official installer for this station's OS.
+(function(){
+  const dl=document.getElementById("dlDymo"); if(!dl) return;
+  const plat=((navigator.userAgentData&&navigator.userAgentData.platform)||navigator.platform||navigator.userAgent||"");
+  const isMac=/mac|iphone|ipad|ipod/i.test(plat);
+  dl.href = isMac ? "https://download.dymo.com/dymo/Software/Mac/DCDMac1.5.1.15.pkg"
+                  : "https://download.dymo.com/dymo/Software/Win/DCDSetup1.5.1.20.exe";
+  dl.textContent = isMac ? "⤓ Download DYMO Connect for Mac" : "⤓ Download DYMO Connect for Windows";
+})();
 document.getElementById("setupX").onclick=closeSetup;
 document.getElementById("setupClose").onclick=closeSetup;
 document.getElementById("setupRecheck").onclick=recheckSetup;
