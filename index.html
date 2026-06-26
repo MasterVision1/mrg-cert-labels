@@ -581,14 +581,12 @@ const CONFIG = {
   // WITH a printer connected (RenderLabel + PrintLabel both 200).
   labelTypes: [
     { key:"address",      name:"Address (1 1/8 × 3 1/2)", labelName:"Address",     wIn:3.5, hIn:1.125 },
-    // DYMO 30346 (1/2 × 1 7/8) sits OFFSET to the LEFT of a wider liner, and the
-    // service has no built-in paper for it — faking it as "Address" prints onto the
-    // blank liner (nothing lands on the label). The ONLY reliable fix is the real
-    // 30346 geometry, which lives in a label designed against the roll in DYMO
-    // Connect. Paste that saved .label's <DesktopLabel>…</DesktopLabel> XML into
-    // libraryTemplateXml below; this entry then prints via the template + LabelSet
-    // merge (named TextObjects PART/PO/MATERIAL/SIZE/HEAT/QTY) instead of the canvas.
-    { key:"library",      name:"Library",                 labelName:"Address",     wIn:1.875, hIn:0.5, templateXml:()=>CONFIG.libraryTemplateXml },
+    // DYMO 30346 Library (1/2 × 1 7/8). The service has no built-in "Library" paper
+    // (verified: every Library/30346 name 400s), so we print it the same way as every
+    // other size — the canvas image sized to 1.875×0.5 under a valid labelName. This
+    // is exactly what the preview shows. If a real 30346 roll ever mis-registers,
+    // set CONFIG.libraryTemplateXml to a DYMO-Connect-designed label and it'll use that.
+    { key:"library",      name:"Library (1/2 × 1 7/8)",    labelName:"Address",     wIn:1.875, hIn:0.5, templateXml:()=>CONFIG.libraryTemplateXml },
     { key:"largeaddress", name:"Large Address (30321)", labelName:"LargeAddress", wIn:3.5, hIn:1.4 },
     { key:"shipping",     name:"Shipping (30256)",      labelName:"Shipping",     wIn:4.0, hIn:2.3125 },
     { key:"filefolder",   name:"File Folder (30327)",   labelName:"FileFolder",   wIn:3.4375, hIn:0.5625 },
@@ -1099,12 +1097,6 @@ function confirmPrinted(stickers){
 }
 async function printRecs(recs){
   if(!dymoOk){ reconnectDymo(); return; }
-  // 30346 library roll can't print correctly until its real label definition is in
-  // place (see CONFIG.libraryTemplateXml). Don't burn labels printing onto the liner.
-  if(currentLabel().key==="library" && !currentTemplateXml()){
-    toast("Library (30346) needs its label set up in DYMO Connect first — see CONFIG.libraryTemplateXml","err");
-    return;
-  }
   let okCerts=0, stickers=0, fail=0; const sent=[];
   for(const rec of recs){ const n=copies||1; try{await dymoPrintOne(rec,n); okCerts++; stickers+=n; sent.push(rec);}catch(e){fail++;console.error(e);} }
   selected.clear(); render();
