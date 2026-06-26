@@ -689,15 +689,34 @@ const DYMO_TEXT={
   noprinter:{pill:"No printer", banner:()=>"DYMO running — plug in a printer", btn:()=>"🖨 No printer plugged in"},
   off:{pill:"Connect DYMO", banner:()=>"DYMO not connected — click to allow", btn:()=>"🖨 Connect DYMO first"},
 };
-// The DYMO Web Service is HTTPS-only with a self-signed cert (CN=localhost, valid
-// for localhost + 127.0.0.1). The browser must TRUST that cert or background fetches
-// fail silently — that's the usual "installed & running but won't connect". Probe a
-// couple of host spellings and stick with whichever the browser will talk to.
-const DYMO_BASES=[
-  "https://127.0.0.1:41951/DYMO/DLS/Printing",
-  "https://localhost:41951/DYMO/DLS/Printing",
-];
-let dymoBase=DYMO_BASES[0];
+// DYMO Connect's web service is HTTPS-only with a self-signed cert (valid for both
+// localhost + 127.0.0.1). The browser must TRUST that cert or fetches fail silently.
+// It also picks the first FREE port in 41951–41960 at startup (its own SDK scans the
+// same range) — so if 41951 is taken on a station the service lands on 41952+. We
+// must scan host × port; hardcoding 41951 is the classic "works on my laptop, refused
+// on the station." Whatever answers is remembered so the next load is instant.
+const DYMO_HOSTS=["127.0.0.1","localhost"];
+const DYMO_PORTS=[41951,41952,41953,41954,41955,41956,41957,41958,41959,41960];
+const DYMO_BASES=DYMO_HOSTS.flatMap(h=>DYMO_PORTS.map(p=>`https://${h}:${p}/DYMO/DLS/Printing`));
+let dymoBase=(()=>{ try{ return localStorage.getItem("cl_dymobase")||DYMO_BASES[0]; }catch(e){ return DYMO_BASES[0]; } })();
+// Race every candidate; first to answer /StatusConnected wins. A refused port or an
+// untrusted cert rejects almost instantly, so scanning the whole range stays fast.
+async function probeDymoBase(){
+  const order=[dymoBase,...DYMO_BASES.filter(b=>b!==dymoBase)];
+  const tryOne=cand=>new Promise((resolve,reject)=>{
+    const ac=new AbortController(), t=setTimeout(()=>{ac.abort();reject();},3000);
+    fetch(cand+"/StatusConnected",{cache:"no-store",signal:ac.signal})
+      .then(r=>{ clearTimeout(t); r.ok?resolve(cand):reject(); })
+      .catch(()=>{ clearTimeout(t); reject(); });
+  });
+  try{ return await Promise.any(order.map(tryOne)); }catch(e){ return null; }
+}
+// Keep the "allow the connection" link + shown URL pointed at the live endpoint.
+function syncCertLink(){
+  const u=dymoBase+"/StatusConnected";
+  const a=document.getElementById("allowDymo"); if(a) a.href=u;
+  const t=document.getElementById("certUrlText"); if(t) t.textContent=u;
+}
 async function dget(p){const r=await fetch(dymoBase+p);return await r.text();}
 // "First print is sometimes blank" = cold start: the canvas fonts aren't loaded yet
 // and/or the DYMO image rasterizer hasn't warmed. Prime both once the printer is up.
@@ -716,14 +735,13 @@ async function warmDymo(){
 }
 async function checkDymo(){
   const sel=document.getElementById("printerSel");
-  // Find a reachable service URL first (last-good, then the rest).
-  let base=null;
-  for(const cand of [dymoBase,...DYMO_BASES.filter(b=>b!==dymoBase)]){
-    try{ const r=await fetch(cand+"/StatusConnected",{cache:"no-store"}); if(r.ok){ await r.text(); base=cand; break; } }catch(e){}
-  }
+  // Find a reachable service URL across the whole host × port range.
+  const base=await probeDymoBase();
   try{
     if(!base) throw 0;
     dymoBase=base;
+    try{ localStorage.setItem("cl_dymobase",base); }catch(e){}
+    syncCertLink();
     const xml=await dget("/GetPrinters");
     dymoReachable=true;
     const doc=new DOMParser().parseFromString(xml,"text/xml");
@@ -756,7 +774,7 @@ function paintDymo(){
 async function reconnectDymo(){
   toast("Re-checking DYMO…","");
   await checkDymo();
-  if(dymoState==="off") setTimeout(()=>toast("Blocked? Click the 🔒 / ⓘ icon by the address bar → allow this site to access devices, then click here again","err"),700);
+  if(dymoState==="off") setTimeout(()=>toast("Can’t reach DYMO Connect on this PC. Open the DYMO Connect app (green tray icon), then click Re-check. Open “Station setup” for step-by-step help.","err"),700);
   else if(dymoState==="noprinter") toast("DYMO is connected — plug a label printer into this computer","");
 }
 
@@ -775,8 +793,8 @@ function paintSetup(){
   sum.textContent=ready?"✓ This station is ready to print.":"This station isn’t ready yet — finish the steps below.";
   // 1) DYMO Connect software = is the local service reachable
   setStep("dymo", dymoReachable?"ok":"bad",
-    dymoReachable?"Installed and running on this computer."
-      :"Can’t reach DYMO Connect from this browser yet. If it’s already installed and running (open it — the tray icon should be green), click “allow the connection” below, click through the security screen until you see the word “true”, then Re-check. Only download it if it isn’t installed.");
+    dymoReachable?("Installed and running on this computer ("+dymoBase.replace(/^https:\/\//,"").replace(/\/DYMO.*$/,"")+").")
+      :"DYMO Connect isn’t answering on THIS computer yet. Do these in order:  ①  Open the DYMO Connect app — its tray icon (bottom-right, near the clock) should be green. The connection only works while DYMO Connect is running on this same PC.  ②  Click “allow the connection” below; on the security screen click “Advanced → Continue” until you see the word true.  ③  Click Re-check. If DYMO Connect isn’t installed at all, use the Download button — then redo ①–③.");
   document.getElementById("dymo-actions").style.display=dymoReachable?"none":"";
   // 2) Printer connected
   setStep("printer", dymoOk?"ok":(dymoReachable?"bad":"wait"),
@@ -1459,9 +1477,8 @@ document.getElementById("printStatus").onclick=openSetup;
 // We only sync its href to whichever host the service is actually answering on.
 (function(){
   const a=document.getElementById("allowDymo");
-  const sync=()=>{ const u=dymoBase+"/StatusConnected"; a.href=u; const t=document.getElementById("certUrlText"); if(t) t.textContent=u; };
-  sync(); window.addEventListener("focus",sync);   // dymoBase may change after checkDymo
-  a.addEventListener("click",()=>{ setTimeout(sync,0);
+  syncCertLink(); window.addEventListener("focus",syncCertLink);   // dymoBase may change after checkDymo
+  a.addEventListener("click",()=>{ setTimeout(syncCertLink,0);
     toast("A new tab opened. If it warns “Not secure”, click Advanced → Continue until you see the word “true”. Then return here and click Re-check.",""); });
 })();
 document.getElementById("setupX").onclick=closeSetup;
