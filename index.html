@@ -745,7 +745,13 @@ async function checkDymo(){
     const xml=await dget("/GetPrinters");
     dymoReachable=true;
     const doc=new DOMParser().parseFromString(xml,"text/xml");
-    const printers=[...doc.querySelectorAll("LabelWriterPrinter, Printer")].map(p=>p.querySelector("Name")?.textContent?.trim()).filter(Boolean);
+    // GetPrinters lists every DYMO printer INSTALLED in Windows even when nothing is
+    // physically plugged in (it reports IsConnected=False for those). Only count a
+    // printer as available when IsConnected is true, so we never claim "ready" with
+    // no printer attached.
+    const isConn=el=>{ const c=el.querySelector("IsConnected"); return !c || c.textContent.trim().toLowerCase()==="true"; };
+    const printers=[...doc.querySelectorAll("LabelWriterPrinter, Printer")]
+      .filter(isConn).map(p=>p.querySelector("Name")?.textContent?.trim()).filter(Boolean);
     if(printers.length){
       sel.innerHTML=printers.map(n=>`<option>${esc(n)}</option>`).join(""); sel.style.display=printers.length>1?"inline":"none";
       printerName=printers[0]; dymoOk=true; dymoState="ok"; warmDymo();
