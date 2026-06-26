@@ -20,15 +20,20 @@
 # =====================================================================================
 
 $ErrorActionPreference = 'Stop'
+$ScriptUrl = 'https://raw.githubusercontent.com/MasterVision1/mrg-cert-labels/main/scripts/provision-station.ps1'
 
-function Assert-Admin {
-  $p = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
-  if (-not $p.IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)) {
-    Write-Host "This must run in an ELEVATED PowerShell (Run as administrator). Re-open as Admin and retry." -ForegroundColor Red
-    exit 1
+# Self-elevate: if we're not admin, re-launch this same script elevated (one UAC prompt).
+# Lets anyone run it from a NORMAL PowerShell — no "open as administrator" needed.
+$me = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+if (-not $me.IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)) {
+  Write-Host "Asking Windows for admin (click YES on the prompt)..." -ForegroundColor Cyan
+  try {
+    Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile','-NoExit','-ExecutionPolicy','Bypass','-Command',"irm $ScriptUrl | iex"
+  } catch {
+    Write-Host "Admin prompt was declined. Re-run and click YES, or have an admin run it." -ForegroundColor Red
   }
+  return
 }
-Assert-Admin
 Write-Host "`n=== Cert Label Station — provisioning this PC ===`n" -ForegroundColor Cyan
 
 # ---- 1. Ensure DYMO Connect is installed -------------------------------------------
@@ -115,8 +120,15 @@ foreach ($p in 41951..41960) {
 }
 Write-Host ""
 if ($ok) {
-  Write-Host "DONE. This station is provisioned for ALL users. Plug in the DYMO printer (no admin needed)," -ForegroundColor Green
-  Write-Host "then open the Cert Label Station — it connects automatically. No more admin prompts." -ForegroundColor Green
+  Write-Host "DONE. This station is provisioned for ALL users." -ForegroundColor Green
+  Write-Host ""
+  Write-Host "IMPORTANT — the auto-start takes effect at the NEXT login:" -ForegroundColor Cyan
+  Write-Host "  -> Sign OUT of this admin account and sign in as the normal user (or just restart the PC)." -ForegroundColor Cyan
+  Write-Host "  -> Then plug in the DYMO printer and open the Cert Label Station. It connects automatically." -ForegroundColor Cyan
+  Write-Host "From now on every user — admin or standard — connects with no admin prompts." -ForegroundColor Green
 } else {
-  Write-Host "Setup applied, but verification didn't get a response. Open the DYMO Connect app once, then re-run this script." -ForegroundColor Yellow
+  Write-Host "Setup applied, but the service didn't answer yet (it may still be starting)." -ForegroundColor Yellow
+  Write-Host "Restart the PC, sign in as the normal user, and open the app — it should connect." -ForegroundColor Yellow
 }
+Write-Host ""
+Read-Host "Press Enter to close"
