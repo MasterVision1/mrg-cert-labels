@@ -392,11 +392,12 @@ kbd{background:var(--canvas-mute);border:1px solid var(--line);border-bottom-wid
       <div class="setup-step">
         <div class="setup-ico" id="ico-dymo"></div>
         <div class="setup-txt" style="flex:1">
-          <div class="setup-h">1 · DYMO Connect software</div>
+          <div class="setup-h">1 · DYMO Connect</div>
           <div class="setup-d" id="d-dymo"></div>
           <div class="setup-actions" id="dymo-actions">
-            <a class="btn-print" id="dlDymo" href="https://download.dymo.com/dymo/Software/Win/DCDSetup1.5.1.20.exe">⤓ Download DYMO Connect</a>
-            <a id="dlDymoAll" href="https://www.dymo.com/support?cfid=user-guide" target="_blank" rel="noopener" style="display:block;margin-top:9px;font-size:12px;color:var(--primary);font-weight:700;text-decoration:none">Mac, or browse all versions →</a>
+            <button class="btn-print" id="allowDymo">✔ It’s installed — allow the connection</button>
+            <a class="btn-ghost" id="dlDymo" href="https://download.dymo.com/dymo/Software/Win/DCDSetup1.5.1.20.exe" style="margin-left:8px">⤓ Download DYMO Connect</a>
+            <div><a id="dlDymoAll" href="https://www.dymo.com/support?cfid=user-guide" target="_blank" rel="noopener" style="display:inline-block;margin-top:10px;font-size:12px;color:var(--primary);font-weight:700;text-decoration:none">Mac, or browse all versions →</a></div>
           </div>
         </div>
       </div>
@@ -668,7 +669,17 @@ const DYMO_TEXT={
   noprinter:{pill:"No printer", banner:()=>"DYMO running — plug in a printer", btn:()=>"🖨 No printer plugged in"},
   off:{pill:"Connect DYMO", banner:()=>"DYMO not connected — click to allow", btn:()=>"🖨 Connect DYMO first"},
 };
-async function dget(p){const r=await fetch(CONFIG.dymoBase+p);return await r.text();}
+// The DYMO Web Service is HTTPS-only with a self-signed cert (CN=localhost, valid
+// for localhost + 127.0.0.1). The browser must TRUST that cert or background fetches
+// fail silently — that's the usual "installed & running but won't connect". Probe a
+// couple of host spellings and stick with whichever the browser will talk to.
+const DYMO_BASES=[
+  "https://127.0.0.1:41951/DYMO/DLS/Printing",
+  "https://localhost:41951/DYMO/DLS/Printing",
+];
+let dymoBase=DYMO_BASES[0];
+const DYMO_CERT_URL=dymoBase+"/StatusConnected";   // open in a tab to accept the cert
+async function dget(p){const r=await fetch(dymoBase+p);return await r.text();}
 // "First print is sometimes blank" = cold start: the canvas fonts aren't loaded yet
 // and/or the DYMO image rasterizer hasn't warmed. Prime both once the printer is up.
 let dymoWarmed=false;
@@ -681,13 +692,19 @@ async function warmDymo(){
     if(!rec){ dymoWarmed=false; return; }
     drawStickerCanvas(rec);   // prime canvas + font metrics on this machine
     const body=new URLSearchParams({labelXml:buildLabelXml(rec),renderParamsXml:""}).toString();
-    await fetch(CONFIG.dymoBase+"/RenderLabel",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body}); // wakes the rasterizer
+    await fetch(dymoBase+"/RenderLabel",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body}); // wakes the rasterizer
   }catch(e){ dymoWarmed=false; }
 }
 async function checkDymo(){
   const sel=document.getElementById("printerSel");
+  // Find a reachable service URL first (last-good, then the rest).
+  let base=null;
+  for(const cand of [dymoBase,...DYMO_BASES.filter(b=>b!==dymoBase)]){
+    try{ const r=await fetch(cand+"/StatusConnected",{cache:"no-store"}); if(r.ok){ await r.text(); base=cand; break; } }catch(e){}
+  }
   try{
-    await dget("/StatusConnected");
+    if(!base) throw 0;
+    dymoBase=base;
     const xml=await dget("/GetPrinters");
     dymoReachable=true;
     const doc=new DOMParser().parseFromString(xml,"text/xml");
@@ -740,7 +757,7 @@ function paintSetup(){
   // 1) DYMO Connect software = is the local service reachable
   setStep("dymo", dymoReachable?"ok":"bad",
     dymoReachable?"Installed and running on this computer."
-      :"Not detected on this computer. Download it below, run the installer, then click Re-check (it starts on its own — nothing to open).");
+      :"Can’t reach DYMO Connect from this browser yet. If it’s already installed and running (open it — the tray icon should be green), click “allow the connection” below, click through the security screen until you see the word “true”, then Re-check. Only download it if it isn’t installed.");
   document.getElementById("dymo-actions").style.display=dymoReachable?"none":"";
   // 2) Printer connected
   setStep("printer", dymoOk?"ok":(dymoReachable?"bad":"wait"),
@@ -1021,7 +1038,7 @@ async function dymoPrintOne(rec, n){
   body.set("printParamsXml",`<LabelWriterPrintParams><Copies>${Math.max(1,n||1)}</Copies><PrintQuality>BarcodeAndGraphics</PrintQuality></LabelWriterPrintParams>`);
   body.set("labelXml", useTpl?CONFIG.labelTemplateXml:buildLabelXml(rec));
   body.set("labelSetXml", useTpl?buildLabelSetXml(rec):"");
-  const r=await fetch(CONFIG.dymoBase+"/PrintLabel",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:body.toString()});
+  const r=await fetch(dymoBase+"/PrintLabel",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:body.toString()});
   if(!r.ok) throw new Error("HTTP "+r.status);
 }
 // Resolves true (printed) / false (keep) once the operator answers the confirm modal.
@@ -1410,6 +1427,12 @@ document.getElementById("printStatus").onclick=openSetup;
                   : "https://download.dymo.com/dymo/Software/Win/DCDSetup1.5.1.20.exe";
   dl.textContent = isMac ? "⤓ Download DYMO Connect for Mac" : "⤓ Download DYMO Connect for Windows";
 })();
+document.getElementById("allowDymo").onclick=()=>{
+  // Open the DYMO service URL in a tab so the operator can accept the self-signed
+  // cert. Once accepted, our background fetches to it succeed.
+  window.open(DYMO_CERT_URL,"_blank","noopener");
+  toast("A new tab opened. If it warns “Not secure”, click Advanced → Continue until you see the word “true”. Then return here and click Re-check.","");
+};
 document.getElementById("setupX").onclick=closeSetup;
 document.getElementById("setupClose").onclick=closeSetup;
 document.getElementById("setupRecheck").onclick=recheckSetup;
