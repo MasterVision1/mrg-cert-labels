@@ -56,7 +56,7 @@ if (-not (Test-Path $hostExe)) {
     Invoke-WebRequest "https://download.dymo.com/dymo/Software/Win/DCDSetup1.5.1.20.exe" -OutFile $exe
     # DCD installer is Advanced Installer based; /exenoui /qn runs it silently.
     Start-Process $exe -ArgumentList '/exenoui','/qn' -Wait
-    if (-not (Test-Path $hostExe)) {
+    if ((-not (Test-Path $hostExe)) -and [Environment]::UserInteractive) {
       Write-Host "      Silent install didn't complete. Launching the installer UI — click through it, then re-run this script." -ForegroundColor Yellow
       Start-Process $exe -Wait
     }
