@@ -46,16 +46,19 @@ if (-not (Test-Path $hostExe)) {
   $installed = $false
   if (Get-Command winget -ErrorAction SilentlyContinue) {
     try {
-      winget install --id DYMO.DYMOConnect --silent --accept-package-agreements --accept-source-agreements --disable-interactivity
+      winget install --id DYMO.DYMOConnect --scope machine --silent --accept-package-agreements --accept-source-agreements --disable-interactivity
       if (Test-Path $hostExe) { $installed = $true }
     } catch {}
   }
   if (-not $installed) {
-    Write-Host "      winget unavailable/failed — downloading the installer..." -ForegroundColor Yellow
+    Write-Host "      Downloading the installer..." -ForegroundColor Yellow
     $exe = Join-Path $env:TEMP "DCDSetup.exe"
     Invoke-WebRequest "https://download.dymo.com/dymo/Software/Win/DCDSetup1.5.1.20.exe" -OutFile $exe
-    # DCD installer is Advanced Installer based; /exenoui /qn runs it silently.
-    Start-Process $exe -ArgumentList '/exenoui','/qn' -Wait
+    # DCD installer is Advanced Installer based — try the common silent switches in turn.
+    foreach ($args in @(@('/exenoui','/qn'), @('/quiet'), @('/silent'), @('/S'))) {
+      try { Start-Process $exe -ArgumentList $args -Wait -ErrorAction Stop } catch {}
+      if (Test-Path $hostExe) { break }
+    }
     if ((-not (Test-Path $hostExe)) -and [Environment]::UserInteractive) {
       Write-Host "      Silent install didn't complete. Launching the installer UI — click through it, then re-run this script." -ForegroundColor Yellow
       Start-Process $exe -Wait
