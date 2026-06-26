@@ -67,7 +67,22 @@ if (-not (Test-Path $hostExe)) {
   if (-not (Test-Path $hostExe)) { Write-Host "DYMO Connect still not installed. Install it manually, then re-run." -ForegroundColor Red; exit 1 }
   Write-Host "[1/5] DYMO Connect installed." -ForegroundColor Green
 } else {
-  Write-Host "[1/5] DYMO Connect already installed." -ForegroundColor Green
+  # Already installed — but OLD versions (< 1.6) use an outdated TLS config the local
+  # service can't negotiate with modern Edge/Chrome -> "can't connect to DYMO" even
+  # though the port is open and the cert is trusted. Upgrade those.
+  $ver = [version]((Get-Item $hostExe).VersionInfo.ProductVersion -replace '[^0-9.]','')
+  if ($ver -lt [version]'1.6.0.0') {
+    Write-Host "[1/5] DYMO Connect $ver is too old (modern browsers reject its TLS) — upgrading..." -ForegroundColor Yellow
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+      try { winget install --id DYMO.DYMOConnect --scope machine --force --silent --accept-package-agreements --accept-source-agreements --disable-interactivity } catch {}
+    }
+    $ver = [version]((Get-Item $hostExe).VersionInfo.ProductVersion -replace '[^0-9.]','')
+    if ($ver -lt [version]'1.6.0.0') {
+      Write-Host "      Couldn't auto-upgrade. Update DYMO Connect to 1.6+ manually (DYMO Connect app -> Help -> Check for Updates, or reinstall the latest from dymo.com), then re-run." -ForegroundColor Yellow
+    } else { Write-Host "[1/5] DYMO Connect upgraded to $ver." -ForegroundColor Green }
+  } else {
+    Write-Host "[1/5] DYMO Connect already installed ($ver)." -ForegroundColor Green
+  }
 }
 
 # ---- 2. Run the web service as an ALWAYS-ON SYSTEM service (THE key fix) ------------
