@@ -14,8 +14,15 @@ You need: an account that can edit Group Policy (Domain Admin), on any domain-jo
    `\\mrg.local\NETLOGON\provision-station.ps1`
    Download: https://raw.githubusercontent.com/MasterVision1/mrg-cert-labels/main/scripts/provision-station.ps1
 
-## Step 2 — Create one Group Policy
-2. Press **Win+R**, type `gpmc.msc`, Enter. (Group Policy Management)
+## Step 2 — Open Group Policy Management
+2. Press **Win+R**, type `gpmc.msc`, Enter.
+
+   **"Windows cannot find gpmc.msc"?** That console isn't on normal PCs — only on the
+   **server (domain controller)**. Easiest: log into the **server** that runs `mrg.local`
+   and run `gpmc.msc` there (it's already installed). *Or* add it to this PC with an
+   **admin** PowerShell:
+   `Add-WindowsCapability -Online -Name Rsat.GroupPolicy.Management.Tools~~~~0.0.1.0`
+   then try `gpmc.msc` again.
 3. Find the folder (OU) that holds the **shop/station computers**. Right-click it →
    **Create a GPO in this domain, and Link it here…** → name it **`Cert Label Station`** → OK.
    *(If the station PCs aren't in their own folder, you can right-click the domain root
