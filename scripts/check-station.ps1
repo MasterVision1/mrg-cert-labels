@@ -19,9 +19,10 @@ Write-Host "`n=== Cert Label Station — checking this PC (as $env:USERNAME) ===
 $hostExe = "C:\Program Files (x86)\DYMO\DYMO Connect\DYMO.WebApi.Win.Host.exe"
 Result (Test-Path $hostExe) "DYMO Connect is installed" "Install it: run the setup line in an Admin PowerShell."
 
-# 2. Auto-start set for ALL users (machine Run key) — the fix for non-admin users
+# 2. Always-on SYSTEM service (or machine Run key fallback) — the fix for non-admin users
+$taskOk = [bool](Get-ScheduledTask -TaskName 'DYMO Web Service (all users)' -ErrorAction SilentlyContinue)
 $runVal = (Get-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'DYMOWebApi').DYMOWebApi
-Result ([bool]$runVal) "Web service set to auto-start for every user (HKLM Run)" "Re-run the setup (provision-station.ps1) in an Admin PowerShell."
+Result ($taskOk -or [bool]$runVal) "Web service set to run for every user (always-on/SYSTEM)" "Re-run the setup (provision-station.ps1) in an Admin PowerShell."
 
 # 3. Cert trusted machine-wide (so every user's browser trusts it)
 $certOk = [bool](Get-ChildItem Cert:\LocalMachine\Root | Where-Object Subject -like '*DYMO*')

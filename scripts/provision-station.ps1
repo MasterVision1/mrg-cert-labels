@@ -70,21 +70,34 @@ if (-not (Test-Path $hostExe)) {
   Write-Host "[1/5] DYMO Connect already installed." -ForegroundColor Green
 }
 
-# ---- 2. Make the web service auto-start for ALL users (THE key fix) -----------------
-# Move the per-user auto-start to the machine Run key so every login starts the service.
+# ---- 2. Run the web service as an ALWAYS-ON SYSTEM service (THE key fix) ------------
+# DYMO normally starts its web host only for the logged-in user, so it never runs for
+# other users -> "can't connect to DYMO". Run it as SYSTEM at startup instead: it's up
+# from boot, and loopback 127.0.0.1 is shared across sessions, so EVERY user's browser
+# reaches it regardless of who's logged in. A scheduled task gives us a SYSTEM service.
+$taskName = 'DYMO Web Service (all users)'
+try {
+  $action    = New-ScheduledTaskAction -Execute $hostExe -Argument '/auto'
+  $trigger   = New-ScheduledTaskTrigger -AtStartup
+  $principal = New-ScheduledTaskPrincipal -UserId 'NT AUTHORITY\SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+  $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero)
+  Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+  Write-Host "[2/5] Registered always-on SYSTEM service (starts at boot, for all users)." -ForegroundColor Green
+} catch {
+  Write-Host "[2/5] Couldn't register the SYSTEM service ($($_.Exception.Message)); falling back to per-login start." -ForegroundColor Yellow
+}
+# Belt-and-suspenders: also set the machine Run key so it starts at login if the task path fails.
 $runHKLM = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run'
 Set-ItemProperty -Path $runHKLM -Name 'DYMOWebApi' -Value ('"{0}" /auto' -f $hostExe)
 if (Test-Path $helperEx) { Set-ItemProperty -Path $runHKLM -Name 'DymoOfficeHelper' -Value ('"{0}" /w' -f $helperEx) }
-# Remove the installing-admin's per-user copy so there aren't duplicates (best effort).
-try { Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'DYMOWebApi' -ErrorAction SilentlyContinue } catch {}
-Write-Host "[2/5] Web service set to auto-start for every user (HKLM Run)." -ForegroundColor Green
 
-# ---- 3. Start the web service now (this session) -----------------------------------
-if (-not (Get-Process -Name 'DYMO.WebApi.Win.Host' -ErrorAction SilentlyContinue)) {
-  Start-Process $hostExe -ArgumentList '/auto'
-  Start-Sleep -Seconds 3
-}
-Write-Host "[3/5] Web service running." -ForegroundColor Green
+# ---- 3. Start the service NOW (so it works this session without a reboot) -----------
+# Stop any per-user instance first so the SYSTEM one owns the port cleanly.
+Get-Process -Name 'DYMO.WebApi.Win.Host' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 1
+try { Start-ScheduledTask -TaskName $taskName -ErrorAction Stop } catch { Start-Process $hostExe -ArgumentList '/auto' }
+Start-Sleep -Seconds 4
+Write-Host "[3/5] Web service started (as SYSTEM — no login needed)." -ForegroundColor Green
 
 # ---- 4. Trust the DYMO cert machine-wide (covers ALL users, no per-user prompt) ----
 $port = $null
