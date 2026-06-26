@@ -18,11 +18,22 @@ The cloud app → local printer path works because the DYMO web service answers 
 origin (`Access-Control-Allow-Origin: *`) and `127.0.0.1` always resolves to the
 machine the browser is running on. No agent, no central print server, no barcode scanner.
 
-## Per-station requirement (one-time)
+## Per-station setup (one-time, run ONCE as admin — then every user is set)
 
-Each machine that **prints** needs:
-- **DYMO Connect** installed (`winget install DYMO.DYMOConnect`) — provides the web service + trusted cert
-- A DYMO LabelWriter plugged in
+On each machine that **prints**, an admin runs this once in an elevated PowerShell:
+
+```
+irm https://raw.githubusercontent.com/MasterVision1/mrg-cert-labels/main/scripts/provision-station.ps1 | iex
+```
+
+It installs DYMO Connect, **makes its web service auto-start for every user** (HKLM Run —
+fixes "works as admin, standard user can't connect": DYMO normally auto-starts the
+service from the *installing user's* HKCU, so other users never get it), trusts the cert
+machine-wide, and verifies. After that, **any** user — admin or standard — just plugs in
+the DYMO LabelWriter and prints, with no admin prompts and no per-user steps.
+
+Already-installed station that only needs the connection fixed for non-admin users? The
+same script is safe to re-run, or use `scripts/trust-dymo-cert.ps1` (per-user, no admin).
 
 Machines that only view/approve need nothing but a browser.
 
