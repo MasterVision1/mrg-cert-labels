@@ -131,4 +131,5 @@ if ($ok) {
   Write-Host "Restart the PC, sign in as the normal user, and open the app — it should connect." -ForegroundColor Yellow
 }
 Write-Host ""
-Read-Host "Press Enter to close"
+# Only pause when a human is watching — never when pushed via GPO/Intune/SYSTEM.
+if ([Environment]::UserInteractive -and $Host.Name -eq 'ConsoleHost') { Read-Host "Press Enter to close" }
