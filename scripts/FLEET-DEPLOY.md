@@ -48,7 +48,7 @@ Link the GPO to the OU that holds the shop-station computers. On a station:
 ### D. Install DYMO Connect on each station (one-time, per PC)
 During the normal PC build, run this once (it self-elevates — click Yes):
 ```
-irm https://raw.githubusercontent.com/MasterVision1/mrg-cert-labels/main/scripts/provision-station.ps1 | iex
+irm https://github.com/MasterVision1/mrg-cert-labels/raw/main/scripts/provision-station.ps1 | iex
 ```
 It installs DYMO **and** applies the same fix locally (belt-and-suspenders with the GPO).
 

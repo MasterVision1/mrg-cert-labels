@@ -13,7 +13,7 @@
 # HOW TO RUN (one time per Windows user on a printing station):
 #   1. Make sure DYMO Connect is installed and running (green tray icon).
 #   2. Open a NORMAL PowerShell (Start -> type "PowerShell" -> Enter). NOT "as Admin".
-#   3. Paste:  irm https://raw.githubusercontent.com/MasterVision1/mrg-cert-labels/main/scripts/trust-dymo-cert.ps1 | iex
+#   3. Paste:  irm https://github.com/MasterVision1/mrg-cert-labels/raw/main/scripts/trust-dymo-cert.ps1 | iex
 #   4. If Windows pops a "Do you want to install this certificate?" box, click Yes.
 #   5. Close and reopen the browser. The station connects automatically.
 

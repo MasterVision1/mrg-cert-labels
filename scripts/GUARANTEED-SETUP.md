@@ -19,7 +19,7 @@ You log in as an admin (or have the admin password handy for the prompt in Step 
 Copy this exactly (it's one line), right-click in the blue window to paste, press Enter:
 
 ```
-[Net.ServicePointManager]::SecurityProtocol='Tls12'; irm https://raw.githubusercontent.com/MasterVision1/mrg-cert-labels/main/scripts/provision-station.ps1 | iex
+[Net.ServicePointManager]::SecurityProtocol='Tls12'; irm https://github.com/MasterVision1/mrg-cert-labels/raw/main/scripts/provision-station.ps1 | iex
 ```
 
 ## Step 3 — Let it run

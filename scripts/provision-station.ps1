@@ -16,11 +16,11 @@
 #
 #  HOW TO RUN:
 #    Right-click Start -> "Terminal (Admin)" / "Windows PowerShell (Admin)", then:
-#      irm https://raw.githubusercontent.com/MasterVision1/mrg-cert-labels/main/scripts/provision-station.ps1 | iex
+#      irm https://github.com/MasterVision1/mrg-cert-labels/raw/main/scripts/provision-station.ps1 | iex
 # =====================================================================================
 
 $ErrorActionPreference = 'Stop'
-$ScriptUrl = 'https://raw.githubusercontent.com/MasterVision1/mrg-cert-labels/main/scripts/provision-station.ps1'
+$ScriptUrl = 'https://github.com/MasterVision1/mrg-cert-labels/raw/main/scripts/provision-station.ps1'
 
 # Self-elevate: if we're not admin, re-launch this same script elevated (one UAC prompt).
 # Lets anyone run it from a NORMAL PowerShell — no "open as administrator" needed.

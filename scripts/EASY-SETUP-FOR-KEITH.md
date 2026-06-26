@@ -12,7 +12,7 @@ You need: an account that can edit Group Policy (Domain Admin), on any domain-jo
 1. On a server/PC, open this link and **Save As** the file
    `provision-station.ps1` into the **NETLOGON** share:
    `\\mrg.local\NETLOGON\provision-station.ps1`
-   Download: https://raw.githubusercontent.com/MasterVision1/mrg-cert-labels/main/scripts/provision-station.ps1
+   Download: https://github.com/MasterVision1/mrg-cert-labels/raw/main/scripts/provision-station.ps1
 
 ## Step 2 — Open Group Policy Management
 2. Press **Win+R**, type `gpmc.msc`, Enter.
@@ -55,6 +55,6 @@ into Edge — it should say `true`.)
 Rare, but if a machine's DYMO install doesn't take from the policy, sit at that PC once,
 open PowerShell, paste this, click **Yes**, restart:
 ```
-irm https://raw.githubusercontent.com/MasterVision1/mrg-cert-labels/main/scripts/provision-station.ps1 | iex
+irm https://github.com/MasterVision1/mrg-cert-labels/raw/main/scripts/provision-station.ps1 | iex
 ```
 Everything else (the all-users fix) still comes from the Group Policy.

@@ -23,7 +23,7 @@ machine the browser is running on. No agent, no central print server, no barcode
 On each machine that **prints**, an admin runs this once in an elevated PowerShell:
 
 ```
-irm https://raw.githubusercontent.com/MasterVision1/mrg-cert-labels/main/scripts/provision-station.ps1 | iex
+irm https://github.com/MasterVision1/mrg-cert-labels/raw/main/scripts/provision-station.ps1 | iex
 ```
 
 It installs DYMO Connect, **makes its web service auto-start for every user** (HKLM Run —
