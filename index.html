@@ -564,7 +564,7 @@ const CONFIG = {
   dymoBase: "https://127.0.0.1:41951/DYMO/DLS/Printing",
   format:{ line1:"{partNumber} PO:{poNumber}", line2:"{material} {spec} {size}", line3:"HT#{heat} QTY {quantity}" },
   copiesPerCert:1,
-  pollMs:15000,
+  pollMs:5000,   // near-live: an open station reflects a new approval within ~5s
   // GUARANTEED-CORRECT PRINTING: design the master tag once in DYMO Connect on a
   // real station (exact label stock + pretty layout), save the .label, and paste
   // its <DieCutLabel>…</DieCutLabel> XML here. Give each TextObject one of these
@@ -657,8 +657,23 @@ async function loadRecords(initial){
   if(!initial) recs.forEach(r=>{ if(!knownIds.has(r.id) && !r.printed) fresh.add(r.id); });
   recs.forEach(r=>knownIds.add(r.id));
   RECORDS=[...testCerts, ...recs];   // local test certs always on top
+  // A brand-new approval should "load up as ready to print" the instant it lands —
+  // even on an already-open station. Snap to the Ready tab and pre-select the newest
+  // fresh cert so the operator can print immediately (Enter) without hunting for it.
+  if(fresh.size){
+    view="ready";
+    document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.view==="ready"));
+    const newest=recs.find(r=>fresh.has(r.id));
+    if(newest){ selected=new Set([newest.id]); previewRec=newest; }
+  }
   render(fresh);
-  if(fresh.size) toast(`${fresh.size} new cert${fresh.size>1?"s":""} approved`,"ok");
+  if(fresh.size){
+    toast(`${fresh.size} new cert${fresh.size>1?"s":""} approved — ready to print`,"ok");
+    const newest=recs.find(r=>fresh.has(r.id));
+    if(newest){ showPreview(newest); }
+    // Nudge the station to the front + ping so a worker away from the screen notices.
+    try{ document.querySelector(".row.fresh")?.scrollIntoView({behavior:"smooth",block:"center"}); }catch(e){}
+  }
 }
 async function markPrinted(ids){
   const now=new Date().toISOString();
@@ -1505,9 +1520,11 @@ document.addEventListener("keydown",e=>{
   if(e.key==="/"){ e.preventDefault(); document.getElementById("q").focus(); }
   else if(e.key==="Enter" && selected.size){ e.preventDefault(); printRecs([...selected].map(id=>RECORDS.find(r=>r.id===id)).filter(Boolean)); }
 });
-// Make connecting effortless: re-check whenever the worker returns to the tab.
-window.addEventListener("focus",checkDymo);
-document.addEventListener("visibilitychange",()=>{if(!document.hidden)checkDymo();});
+// Make connecting effortless AND live: whenever the worker returns to the tab,
+// re-check the printer AND immediately re-pull approvals so an already-open
+// station is never showing stale data — no waiting for the next poll tick.
+window.addEventListener("focus",()=>{checkDymo();loadRecords(false);});
+document.addEventListener("visibilitychange",()=>{if(!document.hidden){checkDymo();loadRecords(false);}});
 
 // Print settings — remembered per station (localStorage)
 function lsGet(k,d){ try{ const v=localStorage.getItem(k); return v==null?d:v; }catch(e){ return d; } }
