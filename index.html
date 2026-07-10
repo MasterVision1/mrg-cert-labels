@@ -564,7 +564,9 @@ const CONFIG = {
   dymoBase: "https://127.0.0.1:41951/DYMO/DLS/Printing",
   format:{ line1:"{partNumber} PO:{poNumber}", line2:"{material} {spec} {size}", line3:"HT#{heat} QTY {quantity}" },
   copiesPerCert:1,
-  pollMs:5000,   // near-live: an open station reflects a new approval within ~5s
+  versionPath:"/api/labels/version",
+  versionMs:2500,   // LIVE: cheap change-token poll → reload within ~2-3s of an approval
+  pollMs:12000,     // safety-net full poll (also covers the version endpoint being unavailable)
   // GUARANTEED-CORRECT PRINTING: design the master tag once in DYMO Connect on a
   // real station (exact label stock + pretty layout), save the .label, and paste
   // its <DieCutLabel>…</DieCutLabel> XML here. Give each TextObject one of these
@@ -642,7 +644,13 @@ function currentTemplateXml(){
 }
 
 /* ========================= DATA ========================= */
+let _loadingRecords=false;
 async function loadRecords(initial){
+  if(_loadingRecords) return;   // never stack concurrent SharePoint pulls
+  _loadingRecords=true;
+  try{ await _loadRecords(initial); } finally{ _loadingRecords=false; }
+}
+async function _loadRecords(initial){
   let recs;
   try{
     const r = await fetch(CONFIG.apiBase+CONFIG.labelsPath+"?status=all&top=500",{headers:{Accept:"application/json"}});
@@ -1564,6 +1572,21 @@ loadRecords(true);
 // setup panel automatically so they see exactly what's missing.
 checkDymo().then(()=>{ if(dymoState!=="ok") openSetup(); });
 if(DEMO.length) showPreview(DEMO[0]);
+// LIVE feed: poll the tiny change-token; the instant it moves (an approval or a
+// print anywhere) pull the full list. This is the primary near-instant path;
+// the slower full poll below is a safety net if the token endpoint is down.
+let _lastVersion=null;
+async function checkLabelsVersion(){
+  try{
+    const r=await fetch(CONFIG.apiBase+CONFIG.versionPath,{headers:{Accept:"application/json"},cache:"no-store"});
+    if(!r.ok) return;
+    const t=await r.json();
+    if(t==null || typeof t.v!=="number" || t.v<0) return;   // -1 = backend storage hiccup; ignore
+    if(_lastVersion===null){ _lastVersion=t.v; return; }     // first read = baseline, don't reload
+    if(t.v!==_lastVersion){ _lastVersion=t.v; loadRecords(false); }
+  }catch(e){ /* offline / not deployed yet → safety-net poll covers it */ }
+}
+setInterval(checkLabelsVersion,CONFIG.versionMs);
 setInterval(()=>loadRecords(false),CONFIG.pollMs);
 setInterval(checkDymo,15000);
 </script>
