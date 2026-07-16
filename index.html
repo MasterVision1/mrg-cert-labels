@@ -193,6 +193,19 @@ main{flex:1;display:grid;grid-template-columns:1fr 380px;grid-template-rows:minm
 .row .rowbtn:hover{border-color:var(--primary);color:var(--primary);background:var(--primary-soft)}
 .printed-badge{display:inline-flex;align-items:center;gap:5px;color:var(--green);font-size:12px;font-weight:700}
 
+/* ---------- Loading skeleton (shown on first open while SharePoint answers) ---------- */
+.skel-row{display:flex;align-items:center;gap:14px;padding:16px 18px;border:1px solid var(--line);border-radius:var(--r-sec);background:var(--surf);margin-bottom:10px}
+.skel-row .skel-box{width:20px;height:20px;border-radius:5px;flex:none}
+.skel-row .skel-body{flex:1;display:flex;flex-direction:column;gap:9px}
+.skel-line{height:12px;border-radius:6px}
+.skel-line.w-lg{width:52%;height:15px}.skel-line.w-md{width:34%}.skel-line.w-sm{width:22%}
+.skel-pills{display:flex;gap:7px;margin-top:3px}
+.skel-pill{height:19px;width:64px;border-radius:999px}
+.skel-box,.skel-line,.skel-pill{background:linear-gradient(90deg,#eef0f3 25%,#e2e6eb 37%,#eef0f3 63%);background-size:400% 100%;animation:skel-shimmer 1.25s ease-in-out infinite}
+@keyframes skel-shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
+.live-tick.syncing .pulse{animation:pulse-fast .7s ease-in-out infinite}
+@keyframes pulse-fast{0%,100%{opacity:1}50%{opacity:.35}}
+
 /* ---------- Side panel ---------- */
 aside{display:flex;flex-direction:column;gap:14px;min-height:0;overflow:auto;padding-bottom:6px}
 .card{background:var(--surf);border:1px solid var(--line);border-radius:var(--r-sec);box-shadow:var(--sh-sm);overflow:hidden}
@@ -614,6 +627,12 @@ let RECORDS=[], view="ready", selected=new Set(), printerName=null, dymoOk=false
 // Local test certs (fully filled) for trying the app/printer without a real approval.
 let testCerts=[]; try{ testCerts=JSON.parse(localStorage.getItem("cl_testcerts")||"[]"); }catch(e){}
 function saveTestCerts(){ try{ localStorage.setItem("cl_testcerts",JSON.stringify(testCerts)); }catch(e){} }
+// Last-good server list, so the station paints INSTANTLY on open instead of staring
+// at a blank panel for the ~14s the SharePoint folder-walk takes. Refreshed silently
+// in the background; the cached rows are only ever the real backend rows (never test).
+let _firstLoadDone=false;
+function saveRecordsCache(recs){ try{ localStorage.setItem("cl_records_cache",JSON.stringify({at:Date.now(),recs})); }catch(e){} }
+function readRecordsCache(){ try{ const c=JSON.parse(localStorage.getItem("cl_records_cache")||"null"); return c&&Array.isArray(c.recs)?c:null; }catch(e){ return null; } }
 function addTestCert(){
   const n=testCerts.length+1;
   const cert={ id:"test-"+Date.now(), partNumber:"72302/-"+n, poNumber:"10880"+(n%10),
@@ -648,7 +667,24 @@ let _loadingRecords=false;
 async function loadRecords(initial){
   if(_loadingRecords) return;   // never stack concurrent SharePoint pulls
   _loadingRecords=true;
-  try{ await _loadRecords(initial); } finally{ _loadingRecords=false; }
+  // Show a live "syncing…" cue on the header tick whenever a pull is in flight and
+  // we already have something on screen (so a background refresh reads as activity,
+  // not a freeze). The first-ever load uses the skeleton instead.
+  const tick=document.querySelector(".live-tick");
+  if(tick && _firstLoadDone) tick.classList.add("syncing");
+  try{ await _loadRecords(initial); }
+  finally{ _loadingRecords=false; _firstLoadDone=true; if(tick) tick.classList.remove("syncing"); }
+}
+// Placeholder rows while the (~14s) SharePoint walk runs on a cold open with no cache.
+function renderSkeleton(){
+  const list=document.getElementById("list"); if(!list) return;
+  document.getElementById("listTitle").textContent="Loading approved certs…";
+  const row=`<div class="skel-row"><div class="skel-box"></div><div class="skel-body">`
+    +`<div class="skel-line w-lg"></div><div class="skel-line w-md"></div>`
+    +`<div class="skel-pills"><span class="skel-pill"></span><span class="skel-pill"></span><span class="skel-pill" style="width:90px"></span></div>`
+    +`</div><div class="skel-line w-sm" style="align-self:flex-start"></div></div>`;
+  list.innerHTML=row.repeat(4);
+  const t=document.querySelector(".live-tick"); if(t) t.classList.add("syncing");
 }
 async function _loadRecords(initial){
   let recs;
@@ -657,6 +693,7 @@ async function _loadRecords(initial){
     if(!r.ok) throw 0; recs = await r.json();
     liveData=true;
     document.getElementById("liveLabel").textContent="Live · connected";
+    saveRecordsCache(recs);   // remember for an instant paint on the next open
   }catch(e){
     recs = DEMO.slice(); liveData=false;
     document.getElementById("liveLabel").textContent="Demo data (backend not wired)";
@@ -996,6 +1033,26 @@ function isCanvasBlank(ctx,W,H){
   for(let y=0;y<H;y+=sy){ for(let xx=0;xx<W;xx+=sx){ const i=(y*W+xx)*4; if(d[i]<200||d[i+1]<200||d[i+2]<200) return false; } }
   return true;
 }
+// Word-wrap allowing a narrower first line (for a line that shares its row with a
+// label + QTY block). Breaks on whitespace; hard-splits any single token that alone
+// exceeds the line width, so a value NEVER overflows the label edge.
+function wrapWidths(ctx,text,font,firstMax,restMax){
+  ctx.font=font;
+  const words=String(text).split(/\s+/).filter(Boolean), out=[]; let cur="";
+  const lim=()=> out.length ? restMax : firstMax;
+  for(let w of words){
+    while(ctx.measureText(w).width>lim() && w.length>1){          // token wider than a whole line
+      if(cur){ out.push(cur); cur=""; }
+      let n=1; while(n<w.length && ctx.measureText(w.slice(0,n+1)).width<=lim()) n++;
+      out.push(w.slice(0,n)); w=w.slice(n);
+    }
+    const t=cur?cur+" "+w:w;
+    if(cur && ctx.measureText(t).width>lim()){ out.push(cur); cur=w; }
+    else cur=t;
+  }
+  if(cur) out.push(cur);
+  return out.length?out:[""];
+}
 // Standard: part/PO header · rule · material/spec/size · rule · HEAT + QTY footer
 function tplStandard({x,W,H,f,A,pad,cw,wrap}){
   const headline=f.part||(f.po?("PO "+f.po):"—");
@@ -1004,7 +1061,19 @@ function tplStandard({x,W,H,f,A,pad,cw,wrap}){
   const matLines=matLine?wrap(matLine,`bold ${fB}px ${A}`,cw):[];
   const sizeLines=f.size?wrap(f.size,`600 ${fS}px ${A}`,cw):[];
   const hasFoot=!!(f.heat||f.qty);
-  const total=()=>{ let t=fH; t+=gap+rule+gap; t+=matLines.length*fB*1.16; t+=sizeLines.length*fS*1.16; if(hasFoot)t+=gap+rule+gap+fK; return t; };
+  // The HEAT value can hold several heat numbers ("…; …; …"). Wrap it so it never
+  // runs past the edge or collides with QTY, and budget every wrapped line into the
+  // vertical fit below. Widths are measured at the UN-scaled fK, so once the whole
+  // label scales down the lines only gain slack — they can never overflow.
+  const qtyTxt=f.qty?String(f.qty):"";
+  x.font=`600 ${fL}px ${A}`; const loW=x.measureText("HEAT  ").width;
+  let qtyBlockW=0;
+  if(qtyTxt){ x.font=`800 ${fK}px ${A}`; const qvW=x.measureText(qtyTxt).width; x.font=`600 ${fL}px ${A}`; qtyBlockW=x.measureText("QTY  ").width+qvW; }
+  const heatFirstMax=cw-loW-(qtyBlockW?qtyBlockW+gap:0);   // first line shares the row with QTY
+  const heatRestMax=cw-loW;                                // wrapped lines indent under the value
+  const heatLines=f.heat?wrapWidths(x,f.heat,`800 ${fK}px ${A}`,heatFirstMax,heatRestMax):[];
+  const footLines=Math.max(heatLines.length, qtyTxt?1:0, 1);
+  const total=()=>{ let t=fH; t+=gap+rule+gap; t+=matLines.length*fB*1.16; t+=sizeLines.length*fS*1.16; if(hasFoot)t+=gap+rule+gap+footLines*fK*1.16; return t; };
   const avail=H-pad*2, sc=total()>avail?avail/total():1;
   fH*=sc; fB*=sc; fS*=sc; fK*=sc; fL*=sc; gap*=sc;
   let y=pad+Math.max(0,(avail-total())/2);
@@ -1023,11 +1092,14 @@ function tplStandard({x,W,H,f,A,pad,cw,wrap}){
   for(const ln of sizeLines){ x.fillText(ln,pad,y); y+=fS*1.16; }
   if(hasFoot){
     y+=gap; x.fillStyle="#000"; x.fillRect(pad,y,cw,rule); y+=rule+gap;
-    x.textBaseline="alphabetic"; const base=y+fK;
+    x.textBaseline="alphabetic"; const base=y+fK, lh=fK*1.16;
+    // QTY sits on the first footer line, right-aligned
+    if(qtyTxt){ x.textAlign="right"; x.font=`800 ${fK}px ${A}`; x.fillStyle="#000"; x.fillText(qtyTxt,W-pad,base);
+      const qw=x.measureText(qtyTxt).width; x.font=`600 ${fL}px ${A}`; x.fillStyle="#777"; x.fillText("QTY  ",W-pad-qw,base); }
+    // HEAT label on the first line, value wrapped across as many lines as needed
     if(f.heat){ x.textAlign="left"; x.font=`600 ${fL}px ${A}`; x.fillStyle="#777"; x.fillText("HEAT",pad,base);
-      const lo=x.measureText("HEAT  ").width; x.font=`800 ${fK}px ${A}`; x.fillStyle="#000"; x.fillText(f.heat,pad+lo,base); }
-    if(f.qty){ x.textAlign="right"; x.font=`800 ${fK}px ${A}`; x.fillStyle="#000"; x.fillText(f.qty,W-pad,base);
-      const qw=x.measureText(f.qty).width; x.font=`600 ${fL}px ${A}`; x.fillStyle="#777"; x.fillText("QTY  ",W-pad-qw,base); }
+      const lo=x.measureText("HEAT  ").width; x.font=`800 ${fK}px ${A}`; x.fillStyle="#000";
+      heatLines.forEach((ln,i)=>x.fillText(ln,pad+lo,base+i*lh)); }
     x.textBaseline="top";
   }
 }
@@ -1037,7 +1109,11 @@ function tplHeat({x,W,H,f,A,pad,cw,wrap}){
   const matLine=[f.material,f.spec,f.size].filter(Boolean).join("  ·  ");
   let fTop=H*0.135, fLbl=H*0.095, fHeat=H*0.30, fMat=H*0.115, fQ=H*0.155, rule=Math.max(2,Math.round(H*0.012)), gap=H*0.05;
   const matLines=matLine?wrap(matLine,`bold ${fMat}px ${A}`,cw):[];
-  const total=()=> (top?fTop+gap:0) + rule+gap + (fLbl*1.05+fHeat) + gap+rule+gap + matLines.length*fMat*1.16;
+  // Heat is the hero here — with several heat numbers it must wrap, not run off the
+  // edge. Wrap at the un-scaled hero font, then budget the lines into the fit below.
+  const heatLines=wrapWidths(x,f.heat||"—",`900 ${fHeat}px ${A}`,cw,cw);
+  const heatLH=fHeat*1.14;
+  const total=()=> (top?fTop+gap:0) + rule+gap + (fLbl*1.05+heatLines.length*heatLH) + gap+rule+gap + matLines.length*fMat*1.16 + H*0.02;
   const avail=H-pad*2, sc=total()>avail?avail/total():1;
   fTop*=sc; fLbl*=sc; fHeat*=sc; fMat*=sc; fQ*=sc; gap*=sc;
   let y=pad+Math.max(0,(avail-total())/2);
@@ -1045,8 +1121,10 @@ function tplHeat({x,W,H,f,A,pad,cw,wrap}){
   if(top){ x.font=`700 ${fTop}px ${A}`; x.fillText(top,pad,y); y+=fTop+gap; }
   x.fillStyle="#000"; x.fillRect(pad,y,cw,rule); y+=rule+gap;
   x.font=`700 ${fLbl}px ${A}`; x.fillStyle="#777"; x.fillText("HEAT",pad,y);
-  x.font=`900 ${fHeat}px ${A}`; x.fillStyle="#000"; x.fillText(f.heat||"—",pad,y+fLbl*1.05);
-  y+=fLbl*1.05+fHeat+gap;
+  x.font=`900 ${fHeat}px ${A}`; x.fillStyle="#000";
+  const hLH=fHeat*1.14;
+  heatLines.forEach((ln,i)=>x.fillText(ln,pad,y+fLbl*1.05+i*hLH));
+  y+=fLbl*1.05+heatLines.length*hLH+gap;
   x.fillStyle="#000"; x.fillRect(pad,y,cw,rule); y+=rule+gap;
   x.font=`bold ${fMat}px ${A}`; x.fillStyle="#000"; x.textAlign="left";
   matLines.forEach((ln,i)=>x.fillText(ln,pad,y+i*fMat*1.16));
@@ -1567,6 +1645,19 @@ customH = Math.max(0.3, Math.min(6, parseFloat(lsGet("cl_ch","1.25"))||1.25));
 /* PWA install is handled by the App Store install bridge in <head>
    (#mrg-ins-overlay). The service worker is registered there too. */
 
+// Paint something the instant the app opens so it never looks broken during the
+// ~14s SharePoint pull: last-good rows from cache if we have them, otherwise an
+// animated skeleton. The real list replaces this the moment loadRecords resolves.
+(function primeFirstPaint(){
+  const cached=readRecordsCache();
+  if(cached){
+    RECORDS=[...testCerts, ...cached.recs];
+    cached.recs.forEach(r=>knownIds.add(r.id));
+    render();
+  } else {
+    renderSkeleton();
+  }
+})();
 loadRecords(true);
 // First connection check; if this station isn't ready to print, surface the
 // setup panel automatically so they see exactly what's missing.
