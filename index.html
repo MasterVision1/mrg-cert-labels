@@ -1053,54 +1053,87 @@ function wrapWidths(ctx,text,font,firstMax,restMax){
   if(cur) out.push(cur);
   return out.length?out:[""];
 }
-// Standard: part/PO header · rule · material/spec/size · rule · HEAT + QTY footer
+// Standard: compact TWO-BAND tag (short by design). Band 1 = identity as COLUMNS —
+// part/JOB + material·spec·size on the left, PO and QTY stacked as a right-hand
+// column. Band 2 = the HEAT number(s) full-width. Spreading fields horizontally
+// (instead of stacking) lets the physical tag use ~1/3 less height and stops the
+// content looking squished. Long heat lists wrap onto their own full-width lines.
 function tplStandard({x,W,H,f,A,pad,cw,wrap}){
-  const headline=f.part||(f.po?("PO "+f.po):"—");
-  const matLine=[f.material,f.spec].filter(Boolean).join("   ·   ");
-  let fH=H*0.215, fB=H*0.15, fS=H*0.13, fK=H*0.20, fL=H*0.085, rule=Math.max(2,Math.round(H*0.012)), gap=H*0.055;
-  const matLines=matLine?wrap(matLine,`bold ${fB}px ${A}`,cw):[];
-  const sizeLines=f.size?wrap(f.size,`600 ${fS}px ${A}`,cw):[];
-  const hasFoot=!!(f.heat||f.qty);
-  // The HEAT value can hold several heat numbers ("…; …; …"). Wrap it so it never
-  // runs past the edge or collides with QTY, and budget every wrapped line into the
-  // vertical fit below. Widths are measured at the UN-scaled fK, so once the whole
-  // label scales down the lines only gain slack — they can never overflow.
+  const part=f.part||"";
+  const matLine=[f.material,f.spec,f.size].filter(Boolean).join("   ·   ");
+  const poTxt=f.po?String(f.po):"";
   const qtyTxt=f.qty?String(f.qty):"";
-  x.font=`600 ${fL}px ${A}`; const loW=x.measureText("HEAT  ").width;
-  let qtyBlockW=0;
-  if(qtyTxt){ x.font=`800 ${fK}px ${A}`; const qvW=x.measureText(qtyTxt).width; x.font=`600 ${fL}px ${A}`; qtyBlockW=x.measureText("QTY  ").width+qvW; }
-  const heatFirstMax=cw-loW-(qtyBlockW?qtyBlockW+gap:0);   // first line shares the row with QTY
-  const heatRestMax=cw-loW;                                // wrapped lines indent under the value
-  const heatLines=f.heat?wrapWidths(x,f.heat,`800 ${fK}px ${A}`,heatFirstMax,heatRestMax):[];
-  const footLines=Math.max(heatLines.length, qtyTxt?1:0, 1);
-  const total=()=>{ let t=fH; t+=gap+rule+gap; t+=matLines.length*fB*1.16; t+=sizeLines.length*fS*1.16; if(hasFoot)t+=gap+rule+gap+footLines*fK*1.16; return t; };
-  const avail=H-pad*2, sc=total()>avail?avail/total():1;
-  fH*=sc; fB*=sc; fS*=sc; fK*=sc; fL*=sc; gap*=sc;
-  let y=pad+Math.max(0,(avail-total())/2);
-  x.textBaseline="top"; x.fillStyle="#000"; x.textAlign="left";
-  const poTxt=(f.part&&f.po)?("PO "+f.po):"";
-  let poW=0; if(poTxt){ x.font=`800 ${fH*0.78}px ${A}`; poW=x.measureText(poTxt).width; }
-  const headMax=poTxt? cw-poW-W*0.03 : cw;   // leave room so part # never overlaps PO
-  let fHead=fH; x.font=`800 ${fHead}px ${A}`;
-  while(x.measureText(headline).width>headMax && fHead>10){ fHead-=2; x.font=`800 ${fHead}px ${A}`; }
-  x.fillText(headline,pad,y);
-  if(poTxt){ x.textAlign="right"; x.font=`800 ${fH*0.78}px ${A}`; x.fillText(poTxt,W-pad,y+fH*0.16); x.textAlign="left"; }
-  y+=fH+gap; x.fillStyle="#000"; x.fillRect(pad,y,cw,rule); y+=rule+gap;
-  x.font=`bold ${fB}px ${A}`; x.fillStyle="#000";
-  for(const ln of matLines){ x.fillText(ln,pad,y); y+=fB*1.16; }
-  x.font=`600 ${fS}px ${A}`; x.fillStyle="#222";
-  for(const ln of sizeLines){ x.fillText(ln,pad,y); y+=fS*1.16; }
-  if(hasFoot){
-    y+=gap; x.fillStyle="#000"; x.fillRect(pad,y,cw,rule); y+=rule+gap;
-    x.textBaseline="alphabetic"; const base=y+fK, lh=fK*1.16;
-    // QTY sits on the first footer line, right-aligned
-    if(qtyTxt){ x.textAlign="right"; x.font=`800 ${fK}px ${A}`; x.fillStyle="#000"; x.fillText(qtyTxt,W-pad,base);
-      const qw=x.measureText(qtyTxt).width; x.font=`600 ${fL}px ${A}`; x.fillStyle="#777"; x.fillText("QTY  ",W-pad-qw,base); }
-    // HEAT label on the first line, value wrapped across as many lines as needed
-    if(f.heat){ x.textAlign="left"; x.font=`600 ${fL}px ${A}`; x.fillStyle="#777"; x.fillText("HEAT",pad,base);
-      const lo=x.measureText("HEAT  ").width; x.font=`800 ${fK}px ${A}`; x.fillStyle="#000";
-      heatLines.forEach((ln,i)=>x.fillText(ln,pad+lo,base+i*lh)); }
-    x.textBaseline="top";
+  // Largest size <= base at which `text` fits maxW on ONE line, floored at min. This is
+  // the key to staying short: we SHRINK a field to fit its width instead of wrapping it
+  // into extra lines. Wrapping is only a last resort (see wrapWidths calls below, which
+  // run at the already-fitted size, so they add a line only for a genuinely huge value).
+  const fit=(text,weight,base,min,maxW)=>{ x.font=`${weight} ${base}px ${A}`; const w=x.measureText(text).width; return (!w||w<=maxW)?base:Math.max(min,base*maxW/w); };
+  const rule=Math.max(2,Math.round(H*0.012)), colGap=Math.round(W*0.03);
+  let gap=H*0.075;
+
+  // --- Right column (PO / QTY) — short values, right-aligned, capped so the left block
+  //     always keeps most of the width. ---
+  const rightRows=[]; if(poTxt) rightRows.push(["PO",poTxt]); if(qtyTxt) rightRows.push(["QTY",qtyTxt]);
+  const maxRightVal=cw*0.30; let fRL=H*0.11, fRV=H*0.22;
+  for(const [,val] of rightRows) fRV=Math.min(fRV, fit(val,"800",fRV,H*0.12,maxRightVal));
+  let rightW=0;
+  for(const [lb,val] of rightRows){ x.font=`600 ${fRL}px ${A}`; const lw=x.measureText(lb+" ").width; x.font=`800 ${fRV}px ${A}`; rightW=Math.max(rightW,lw+x.measureText(val).width); }
+  const leftW=cw-(rightW?rightW+colGap:0);
+
+  // --- Left block: part headline (if present) + material·spec·size, each fit to leftW. ---
+  const matBold=!part;                                   // no part → material carries the headline weight
+  let fId = part? fit(part,"800",H*0.30,H*0.16,leftW) : 0;
+  let fMat = matLine? fit(matLine, matBold?"800":"600", matBold?H*0.26:H*0.195, matBold?H*0.13:H*0.10, leftW) : 0;
+  const partLines = part? wrapWidths(x,part,`800 ${fId}px ${A}`,leftW,leftW) : [];
+  const matLines  = matLine? wrapWidths(x,matLine,`${matBold?"800":"600"} ${fMat}px ${A}`,leftW,leftW) : [];
+
+  // --- HEAT band (full-width). Shrink to fit one line; only a very long heat list wraps. ---
+  let fHL=H*0.11; x.font=`600 ${fHL}px ${A}`; const lo=x.measureText("HEAT  ").width;
+  let fH = f.heat? fit(f.heat,"800",H*0.30,H*0.15,cw-lo) : 0;
+  const heatLines = f.heat? wrapWidths(x,f.heat,`800 ${fH}px ${A}`,cw-lo,cw-lo) : [];
+  const hasHeat=heatLines.length>0;
+
+  const band1=()=>Math.max(
+    partLines.length*fId*1.12 + matLines.length*fMat*1.16,
+    rightRows.length*fRV*1.20
+  );
+  const total=()=>band1()+(hasHeat?gap+rule+gap+heatLines.length*fH*1.16:0);
+  const avail=H-pad*2, sc=total()>avail?avail/total():1;   // final vertical fit (tiny labels)
+  fId*=sc; fMat*=sc; fRV*=sc; fRL*=sc; fHL*=sc; fH*=sc; gap*=sc;
+
+  let y0=pad+Math.max(0,(avail-total())/2);
+  x.textBaseline="top";
+
+  // Left block
+  let y=y0; x.textAlign="left";
+  if(part){
+    x.font=`800 ${fId}px ${A}`; x.fillStyle="#000";
+    for(const ln of partLines){ x.fillText(ln,pad,y); y+=fId*1.12; }
+    x.font=`600 ${fMat}px ${A}`; x.fillStyle="#222";
+    for(const ln of matLines){ x.fillText(ln,pad,y); y+=fMat*1.16; }
+  } else {
+    x.font=`800 ${fMat}px ${A}`; x.fillStyle="#000";
+    for(const ln of matLines){ x.fillText(ln,pad,y); y+=fMat*1.16; }
+  }
+
+  // Right column — value bold, small grey label to its left, bottom-aligned to the value
+  let ry=y0;
+  for(const [lb,val] of rightRows){
+    x.textAlign="right"; x.font=`800 ${fRV}px ${A}`; x.fillStyle="#000";
+    const vw=x.measureText(val).width; x.fillText(val,W-pad,ry);
+    x.font=`600 ${fRL}px ${A}`; x.fillStyle="#777"; x.fillText(lb+" ",W-pad-vw,ry+(fRV-fRL)*0.72);
+    ry+=fRV*1.20;
+  }
+  x.textAlign="left";
+
+  // HEAT band
+  if(hasHeat){
+    let by=y0+band1()+gap;
+    x.fillStyle="#000"; x.fillRect(pad,by,cw,rule); by+=rule+gap;
+    x.font=`600 ${fHL}px ${A}`; x.fillStyle="#777"; x.fillText("HEAT",pad,by+fH*0.14);
+    const lo2=x.measureText("HEAT  ").width;
+    x.font=`800 ${fH}px ${A}`; x.fillStyle="#000";
+    heatLines.forEach((ln,i)=>x.fillText(ln,pad+lo2,by+i*fH*1.16));
   }
 }
 // Heat-first: the heat number is the hero (the traceability anchor)
