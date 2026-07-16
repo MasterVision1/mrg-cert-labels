@@ -117,8 +117,22 @@ header{
 .logo .txt b{font-size:15px;font-weight:800;letter-spacing:-.2px;display:block;line-height:1.1}
 .logo .txt span{font-size:11.5px;color:var(--ink3);font-weight:600}
 
+.op-chip{
+  margin-left:auto; margin-right:10px; display:flex; align-items:center; gap:7px; padding:7px 13px; border-radius:var(--r-pill);
+  background:var(--canvas-mute); border:1px solid var(--line); cursor:pointer; transition:var(--ease) .18s;
+  font-weight:600; font-size:13px; color:var(--ink2); font-family:inherit;
+}
+.op-chip:hover{border-color:var(--line-strong);box-shadow:var(--sh-sm);color:var(--ink)}
+.op-chip svg{color:var(--primary)}
+.op-chip.unset{color:var(--ink3)}
+.op-chip.unset svg{color:var(--ink3)}
+/* History time-window segmented control (shown only on the History tab) */
+.hist-win{display:inline-flex;gap:3px;background:var(--canvas-mute);border:1px solid var(--line);border-radius:var(--r-pill);padding:3px;margin-left:14px}
+.hw-btn{border:none;background:transparent;color:var(--ink2);font-weight:700;font-size:12px;padding:5px 12px;border-radius:var(--r-pill);cursor:pointer;transition:var(--ease) .15s;font-family:inherit}
+.hw-btn:hover{color:var(--ink)}
+.hw-btn.active{background:var(--primary);color:#fff;box-shadow:0 2px 6px rgba(27,79,168,.28)}
 .dymo-pill{
-  margin-left:auto; display:flex; align-items:center; gap:9px; padding:7px 12px; border-radius:var(--r-pill);
+  display:flex; align-items:center; gap:9px; padding:7px 12px; border-radius:var(--r-pill);
   background:var(--canvas-mute); border:1px solid var(--line); cursor:pointer; transition:var(--ease) .18s; font-weight:600; font-size:13px;
 }
 .dymo-pill:hover{border-color:var(--line-strong);box-shadow:var(--sh-sm)}
@@ -400,6 +414,10 @@ kbd{background:var(--canvas-mute);border:1px solid var(--line);border-bottom-wid
     <div class="logo-div"></div>
     <div class="txt"><b>Cert Label Station</b></div>
   </div>
+  <button class="op-chip" id="opChip" title="Who's printing — stamped on each cert in History">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+    <span id="opName">Set operator</span>
+  </button>
   <div class="dymo-pill" id="dymoPill" title="Station setup — what this computer needs to print">
     <span class="dot"></span>
     <span id="dymoText">Checking DYMO…</span>
@@ -443,6 +461,20 @@ kbd{background:var(--canvas-mute);border:1px solid var(--line);border-bottom-wid
   </div>
 </div>
 
+<!-- Who's printing at this station — stamped on each cert so History shows who printed it -->
+<div class="overlay" id="opOverlay">
+  <div class="modal" style="max-width:430px">
+    <div class="mh"><b>Who's printing?</b><button class="x" id="opX">✕</button></div>
+    <div class="mb">
+      <p style="margin:0 0 12px;color:var(--ink2);font-size:13.5px;line-height:1.5">Your name is stamped on every cert you print, so <b>History</b> shows who printed each label. Set it once per station.</p>
+      <input id="opInput" list="opList" placeholder="e.g. Troy Marquardt" autocomplete="off"
+        style="width:100%;padding:11px 13px;border:1px solid var(--line-strong);border-radius:10px;font-size:14px;box-sizing:border-box">
+      <datalist id="opList"></datalist>
+    </div>
+    <div class="mf"><span class="grow"></span><button class="btn-ghost" id="opCancel">Cancel</button><button class="btn-print" id="opSave">Save</button></div>
+  </div>
+</div>
+
 <div class="subbar">
   <div class="tabs">
     <button class="tab live active" data-view="ready">Ready to Print <span class="count" id="cReady">0</span></button>
@@ -459,6 +491,10 @@ kbd{background:var(--canvas-mute);border:1px solid var(--line);border-bottom-wid
   <div class="list-col">
     <div class="list-head">
       <span id="listTitle">Approved — ready to print</span>
+      <div class="hist-win" id="histWin" style="display:none">
+        <button class="hw-btn active" data-win="30d">Last 30 days</button>
+        <button class="hw-btn" data-win="all">All time</button>
+      </div>
       <button class="testcert-btn" id="addTestBtn">＋ Test cert</button>
       <button class="testcert-btn clear" id="clearTestBtn" style="display:none">Clear test</button>
       <span class="selall" id="selAll">◻ Select all shown</span>
@@ -635,6 +671,11 @@ const DEMO = [
 
 /* ========================= STATE ========================= */
 let RECORDS=[], view="ready", selected=new Set(), printerName=null, dymoOk=false, dymoReachable=false, modalRec=null, knownIds=new Set(), liveData=false;
+// Who's at this station (stamped on each print → History shows who printed it) and
+// which slice of history to load (30d default keeps big histories fast; "all" pulls
+// everything). Both remembered per station.
+let operator=(()=>{try{return localStorage.getItem("cl_operator")||"";}catch(e){return"";}})();
+let historyWindow=(()=>{try{return localStorage.getItem("cl_histwin")||"30d";}catch(e){return"30d";}})();
 // Local test certs (fully filled) for trying the app/printer without a real approval.
 let testCerts=[]; try{ testCerts=JSON.parse(localStorage.getItem("cl_testcerts")||"[]"); }catch(e){}
 function saveTestCerts(){ try{ localStorage.setItem("cl_testcerts",JSON.stringify(testCerts)); }catch(e){} }
@@ -700,7 +741,10 @@ function renderSkeleton(){
 async function _loadRecords(initial){
   let recs;
   try{
-    const r = await fetch(CONFIG.apiBase+CONFIG.labelsPath+"?status=all&top=500",{headers:{Accept:"application/json"}});
+    // window=30 → full Ready queue + last 30 days of history (fast); window=all for the
+    // "All time" history view. The Ready queue is always complete regardless of window.
+    const win=historyWindow==="all"?"all":"30";
+    const r = await fetch(CONFIG.apiBase+CONFIG.labelsPath+"?window="+win,{headers:{Accept:"application/json"}});
     if(!r.ok) throw 0; recs = await r.json();
     liveData=true;
     document.getElementById("liveLabel").textContent="Live · connected";
@@ -737,8 +781,9 @@ async function markPrinted(ids){
   let touchedTest=false;
   ids.forEach(id=>{const t=testCerts.find(x=>x.id===id);if(t){t.printed=true;t.printedAt=now;touchedTest=true;}});
   if(touchedTest) saveTestCerts();
+  ids.forEach(id=>{const r=RECORDS.find(x=>x.id===id);if(r&&operator)r.printedBy=operator;});
   const realIds=ids.filter(id=>!String(id).startsWith("test-"));
-  if(realIds.length){ try{ await fetch(CONFIG.apiBase+CONFIG.markPrintedPath,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ids:realIds})}); }catch(e){} }
+  if(realIds.length){ try{ await fetch(CONFIG.apiBase+CONFIG.markPrintedPath,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ids:realIds,by:operator||""})}); }catch(e){} }
 }
 
 /* ========================= FORMAT ========================= */
@@ -1255,6 +1300,8 @@ function confirmPrinted(stickers){
 }
 async function printRecs(recs){
   if(!dymoOk){ reconnectDymo(); return; }
+  // Must know who's printing before anything is filed to History.
+  if(!operator){ await openOperator(); if(!operator) return; }
   let okCerts=0, stickers=0, fail=0; const sent=[];
   for(const rec of recs){
     const parts=stickersFor(rec), n=copies||1; let recOk=true;
@@ -1282,18 +1329,27 @@ async function printRecs(recs){
 
 /* ========================= RENDER ========================= */
 function whenTxt(iso){try{const d=new Date(iso),m=Math.round((Date.now()-d)/60000);if(m<1)return"just now";if(m<60)return m+"m ago";if(m<1440)return Math.round(m/60)+"h ago";return d.toLocaleDateString(undefined,{month:"short",day:"numeric"});}catch(e){return"";}}
+// True if a printed cert falls inside the current history window (30d unless "all").
+// Bad/blank dates are kept (never hide a printed cert just because its date is off).
+function inHistoryWindow(rec){
+  if(historyWindow==="all") return true;
+  const t=new Date(rec.printedAt||rec.filedAt).getTime();
+  return isNaN(t) || t>=Date.now()-30*86400000;
+}
+function visibleHistoryCount(){ return RECORDS.filter(r=>r.printed&&inHistoryWindow(r)).length; }
 function visible(){
   const q=document.getElementById("q").value.trim().toLowerCase();
   let recs=RECORDS.slice().sort((a,b)=>new Date(view==="history"?(b.printedAt||b.filedAt):b.filedAt)-new Date(view==="history"?(a.printedAt||a.filedAt):a.filedAt));
-  recs = view==="ready"? recs.filter(r=>!r.printed) : recs.filter(r=>r.printed);
-  if(q) recs=recs.filter(r=>[r.partNumber,r.poNumber,r.material,r.spec,r.size,r.heat,r.supplier].join(" ").toLowerCase().includes(q));
+  recs = view==="ready"? recs.filter(r=>!r.printed) : recs.filter(r=>r.printed&&inHistoryWindow(r));
+  if(q) recs=recs.filter(r=>[r.partNumber,r.poNumber,r.material,r.spec,r.size,r.heat,r.supplier,r.printedBy].join(" ").toLowerCase().includes(q));
   return recs;
 }
 function render(fresh){
   fresh=fresh||new Set();
   document.getElementById("cReady").textContent=RECORDS.filter(r=>!r.printed).length;
-  document.getElementById("cHist").textContent=RECORDS.filter(r=>r.printed).length;
-  document.getElementById("listTitle").textContent = view==="ready"?"Approved — ready to print":"Printed history";
+  document.getElementById("cHist").textContent=visibleHistoryCount();
+  document.getElementById("listTitle").textContent = view==="ready"?"Approved — ready to print":(historyWindow==="all"?"Printed history — all time":"Printed history — last 30 days");
+  renderHistWin();
   const recs=visible(), list=document.getElementById("list");
   if(!recs.length){
     list.innerHTML=`<div class="empty"><div class="ico">${view==="ready"?"⏳":"🔎"}</div><b>${view==="ready"?"Waiting for approvals":"No matches"}</b><div>${view==="ready"?"A cert appears here the moment a packet is approved.":"No printed certs match your search."}</div></div>`;
@@ -1318,7 +1374,7 @@ function render(fresh){
           </div>
         </div>
         <div class="right">
-          ${rec.printed?`<span class="printed-badge">✓ printed ${whenTxt(rec.printedAt)}</span>`:`<span class="when">${whenTxt(rec.filedAt)}</span>`}
+          ${rec.printed?`<span class="printed-badge">✓ printed ${whenTxt(rec.printedAt)}${rec.printedBy?` · ${esc(rec.printedBy)}`:""}</span>`:`<span class="when">${whenTxt(rec.filedAt)}</span>`}
           <button class="rowbtn" data-act="preview">${rec.printed?"Reprint":"Preview"}</button>
         </div>`;
       d.onclick=(e)=>{ if(e.target.dataset.act==="preview"){openModal(rec);return;} toggle(rec.id,rec); };
@@ -1629,7 +1685,46 @@ function deleteTemplate(){
 function esc(s){return String(s==null?"":s).replace(/[<>&"']/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));}
 function toast(m,k){const t=document.getElementById("toast");t.textContent=m;t.className="toast show "+(k||"");clearTimeout(t._t);t._t=setTimeout(()=>t.className="toast "+(k||""),3600);}
 
+/* ===================== OPERATOR (who's printing) ===================== */
+function knownOperators(){ try{ return JSON.parse(localStorage.getItem("cl_operators")||"[]"); }catch(e){ return []; } }
+function rememberOperator(name){ if(!name) return; let a=knownOperators().filter(n=>n!==name); a.unshift(name); a=a.slice(0,20); try{ localStorage.setItem("cl_operators",JSON.stringify(a)); }catch(e){} }
+function setOperator(name){ operator=(name||"").trim(); try{ localStorage.setItem("cl_operator",operator); }catch(e){} rememberOperator(operator); renderOperator(); }
+function renderOperator(){ const el=document.getElementById("opName"), chip=document.getElementById("opChip"); if(el) el.textContent=operator||"Set operator"; if(chip) chip.classList.toggle("unset",!operator); }
+// Opens the "who's printing" modal; resolves once saved or dismissed. Print flow
+// awaits this so nothing is filed to History without a name attached.
+function openOperator(){
+  const ov=document.getElementById("opOverlay"), inp=document.getElementById("opInput"), dl=document.getElementById("opList");
+  dl.innerHTML=knownOperators().map(n=>`<option value="${esc(n)}"></option>`).join("");
+  inp.value=operator||"";
+  ov.classList.add("show"); setTimeout(()=>{inp.focus();inp.select();},60);
+  return new Promise(resolve=>{
+    const save=document.getElementById("opSave"), cancel=document.getElementById("opCancel"), x=document.getElementById("opX");
+    const close=v=>{ ov.classList.remove("show"); save.onclick=cancel.onclick=x.onclick=ov.onclick=inp.onkeydown=null; resolve(v); };
+    const commit=()=>{ const v=inp.value.trim(); if(!v){ inp.focus(); return; } setOperator(v); render(); close(true); };
+    save.onclick=commit; inp.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); commit(); } if(e.key==="Escape") close(false); };
+    cancel.onclick=()=>close(false); x.onclick=()=>close(false);
+    ov.onclick=e=>{ if(e.target.id==="opOverlay") close(false); };
+  });
+}
+/* ===================== HISTORY WINDOW (30d / all-time) ===================== */
+function renderHistWin(){
+  const el=document.getElementById("histWin"); if(!el) return;
+  el.style.display = view==="history" ? "inline-flex" : "none";
+  el.querySelectorAll(".hw-btn").forEach(b=>b.classList.toggle("active",b.dataset.win===historyWindow));
+}
+function setHistoryWindow(win){
+  if(historyWindow===win) return;
+  historyWindow=win; try{ localStorage.setItem("cl_histwin",historyWindow); }catch(e){}
+  renderHistWin();
+  // "All time" needs the full history from the backend (default fetch only pulls 30d).
+  loadRecords(false);
+  render();
+}
+
 /* ========================= WIRE ========================= */
+document.getElementById("opChip").onclick=openOperator;
+document.querySelectorAll("#histWin .hw-btn").forEach(b=>b.onclick=()=>setHistoryWindow(b.dataset.win));
+renderOperator();
 document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));t.classList.add("active");view=t.dataset.view;render();const l=document.getElementById("list");l.classList.remove("swap");void l.offsetWidth;l.classList.add("swap");});
 document.getElementById("q").addEventListener("input",()=>render());
 document.getElementById("selAll").onclick=()=>{const v=visible();const all=v.length&&v.every(r=>selected.has(r.id));v.forEach(r=>all?selected.delete(r.id):selected.add(r.id));render();};
