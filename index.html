@@ -184,6 +184,7 @@ main{flex:1;display:grid;grid-template-columns:1fr 380px;grid-template-rows:minm
 .pill{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:var(--r-pill);font-size:11px;font-weight:700;background:var(--canvas-mute);color:var(--ink2);border:1px solid var(--line)}
 .pill.po{background:var(--primary-soft);color:var(--primary);border-color:#cdddf5}
 .pill.ht{background:#F3EEFB;color:#7c3aed;border-color:#e3d9f7}
+.pill.jobs{background:#FFF4E5;color:#B45309;border-color:#F5D9A8;font-weight:800}
 .pill.qty{background:var(--canvas-mute);color:var(--ink2)}
 .pill.sup{background:transparent;border-color:transparent;color:var(--ink3);font-weight:600}
 .row .right{display:flex;flex-direction:column;align-items:flex-end;gap:7px;flex:none}
@@ -248,6 +249,16 @@ aside{display:flex;flex-direction:column;gap:14px;min-height:0;overflow:auto;pad
 .dymo-img{max-width:100%;height:auto;image-rendering:auto;background:#fff;border-radius:4px;box-shadow:0 2px 10px rgba(0,0,0,.16);display:block;margin:0 auto;animation:imgIn .26s var(--ease)}
 @keyframes imgIn{from{opacity:0;transform:scale(.985)}to{opacity:1;transform:none}}
 .print-truth{text-align:center;font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.05em;margin-top:8px}
+/* Multi-job group: one sticker per job, bracketed so it reads as a set */
+.grp{width:100%;display:flex;flex-direction:column;gap:10px}
+.grp-hd{display:flex;flex-direction:column;gap:2px;text-align:center;font-size:11px;font-weight:800;color:var(--primary);text-transform:uppercase;letter-spacing:.03em}
+.grp-hd span{font-size:10px;font-weight:600;color:var(--ink3);text-transform:none;letter-spacing:0}
+.grp-stack{position:relative;display:flex;flex-direction:column;gap:9px;padding-left:15px}
+.grp-stack::before{content:"";position:absolute;left:3px;top:5px;bottom:5px;width:3px;border-radius:2px;background:var(--primary);opacity:.55}
+.grp-card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.grp-tag{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:10.5px;font-weight:600;color:var(--ink3);text-transform:uppercase;letter-spacing:.03em}
+.grp-tag b{color:var(--ink);font-weight:800;font-size:12px}
+.grp-card .dymo-img{box-shadow:none;border:1px solid #eee;margin:0}
 
 .print-status{display:flex;align-items:center;gap:9px;padding:11px 14px;border-radius:10px;font-weight:600;font-size:13px;cursor:pointer;transition:var(--ease) .15s}
 .print-status.ok{background:var(--green-soft);color:#0f7a37;border:1px solid #bfe6cd}
@@ -830,7 +841,7 @@ function paintDymo(){
   el.className="print-status "+(dymoState==="ok"?"ok":dymoState==="noprinter"?"warn":"bad");
   el.innerHTML=`<span class="dot"></span> ${esc(t.banner(printerName))}<span class="arr">${dymoState==="ok"?"on this PC":"↻"}</span>`;
   updateActionBar();
-  const mp=document.getElementById("modalPrint"); if(mp){mp.disabled=!dymoOk; mp.textContent=dymoOk?"🖨 Print this sticker":t.btn(1);}
+  const mp=document.getElementById("modalPrint"); if(mp){ const mc=modalRec?stickerCount([modalRec]):1; mp.disabled=!dymoOk; mp.textContent=dymoOk?(mc>1?`🖨 Print ${mc} stickers`:"🖨 Print this sticker"):t.btn(mc); }
   paintSetup();   // keep the setup panel live if it's open
 }
 // Clicking status re-attempts the connection. If the browser blocked localhost access,
@@ -1204,7 +1215,20 @@ function buildLabelSetXml(rec){
 // One label per cert by default. QTY is just printed on the label as info — it
 // is NOT a copy multiplier. The "Copies" field (under the preview) is the only
 // thing that changes how many print per cert.
-function stickerCount(recs){ return recs.length*(copies||1); }
+// Distinct JobBoss jobs on a cert (from the PO→JobBoss backfill). [] = no jobs.
+function jobList(rec){
+  const js=Array.isArray(rec.jobs)?rec.jobs.filter(Boolean).map(String):[];
+  return [...new Set(js)];
+}
+// One physical sticker per job: a cert whose PO spans multiple jobs prints a separate
+// sticker for each (same material·spec·size·heat·PO, different job number). 0/1 job →
+// the cert prints once as-is. Clones carry _job so the group preview can label them.
+function stickersFor(rec){
+  const js=jobList(rec);
+  if(js.length<=1) return [rec];
+  return js.map((job,i)=>({...rec, partNumber:job, _job:job, _jobIdx:i+1, _jobTotal:js.length}));
+}
+function stickerCount(recs){ return recs.reduce((n,r)=>n+stickersFor(r).length,0)*(copies||1); }
 async function dymoPrintOne(rec, n){
   await fontsReady();                 // never print before the label's fonts are loaded
   const tpl=currentTemplateXml(), useTpl=!!tpl;
@@ -1232,7 +1256,11 @@ function confirmPrinted(stickers){
 async function printRecs(recs){
   if(!dymoOk){ reconnectDymo(); return; }
   let okCerts=0, stickers=0, fail=0; const sent=[];
-  for(const rec of recs){ const n=copies||1; try{await dymoPrintOne(rec,n); okCerts++; stickers+=n; sent.push(rec);}catch(e){fail++;console.error(e);} }
+  for(const rec of recs){
+    const parts=stickersFor(rec), n=copies||1; let recOk=true;
+    for(const s of parts){ try{ await dymoPrintOne(s,n); stickers+=n; }catch(e){ recOk=false; console.error(e); } }
+    if(recOk){ okCerts++; sent.push(rec); } else { fail++; }
+  }
   selected.clear(); render();
   if(!okCerts){ toast("Couldn't reach the printer — nothing sent.","err"); return; }
   // Happy path — every job queued to the DYMO cleanly: file straight to History,
@@ -1285,6 +1313,7 @@ function render(fresh){
             <span class="pill po">PO ${esc(rec.poNumber||"—")}</span>
             <span class="pill ht">HT# ${esc(rec.heat||"—")}</span>
             <span class="pill qty">QTY ${esc(rec.quantity||"—")}</span>
+            ${jobList(rec).length>1?`<span class="pill jobs">⧉ ${jobList(rec).length} jobs · ${jobList(rec).length} stickers</span>`:''}
             <span class="pill sup">${esc(rec.supplier||"")}</span>
           </div>
         </div>
@@ -1400,9 +1429,26 @@ function fitSticker(box){
 // DYMO render (what actually prints) once the service responds. Debounced + guarded
 // per host so rapid edits/hovers don't pile up requests.
 function renderSticker(host, rec){
+  const parts=stickersFor(rec);
+  if(parts.length>1){ renderStickerGroup(host, rec, parts); return; }
   // The canvas image IS what prints — show it directly (instant, sharp, exact).
   const url=drawStickerCanvas(rec);
   host.innerHTML=`<img class="dymo-img" src="${url}" alt="cert label"><div class="print-truth">✓ exactly what prints</div>`;
+}
+// A cert whose PO spans several jobs → one sticker per job, shown as a labelled,
+// bracketed stack so it's obvious they're a GROUP (same material & heat, different
+// job) and that each job gets its own physical sticker.
+function renderStickerGroup(host, rec, parts){
+  const cards=parts.map(s=>`
+    <div class="grp-card">
+      <div class="grp-tag">JOB <b>${esc(s._job||"—")}</b><span>${s._jobIdx} of ${s._jobTotal}</span></div>
+      <img class="dymo-img" src="${drawStickerCanvas(s)}" alt="label for job ${esc(s._job||"")}">
+    </div>`).join("");
+  host.innerHTML=`<div class="grp">
+      <div class="grp-hd">⧉ ${parts.length} stickers — one per job<span>same material · spec · heat · PO ${esc(rec.poNumber||"—")}</span></div>
+      <div class="grp-stack">${cards}</div>
+    </div>
+    <div class="print-truth">✓ each job prints its own sticker</div>`;
 }
 function showPreview(rec){
   previewRec=rec;
