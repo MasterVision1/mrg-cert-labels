@@ -191,6 +191,12 @@ main{flex:1;display:grid;grid-template-columns:1fr 380px;grid-template-rows:minm
 }
 .row:hover .box{border-color:var(--primary)}
 .row.sel .box{background:var(--primary);border-color:var(--primary);box-shadow:0 2px 6px rgba(27,79,168,.35)}
+/* Non-material certs can't be scanned/printed here — locked, muted, not selectable */
+.row .box.lock{border-style:dashed;border-color:var(--line);background:var(--canvas-mute);font-size:12px;cursor:default}
+.row.noscan:hover .box.lock{border-color:var(--line)}
+.row.noscan{opacity:.85}
+.row.noscan .l1{color:var(--ink2)}
+.noscan-note{color:var(--ink3);font-size:12px;font-weight:700;white-space:nowrap;font-style:italic}
 .row .body{flex:1;min-width:0}
 .row .l1{font-weight:700;font-size:15px;color:var(--ink);letter-spacing:-.1px}
 .row .l2{color:var(--ink2);font-size:13px;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -200,6 +206,11 @@ main{flex:1;display:grid;grid-template-columns:1fr 380px;grid-template-rows:minm
 .pill.ht{background:#F3EEFB;color:#7c3aed;border-color:#e3d9f7}
 .pill.jobs{background:#FFF4E5;color:#B45309;border-color:#F5D9A8;font-weight:800}
 .pill.qty{background:var(--canvas-mute);color:var(--ink2)}
+.pill.type{font-weight:800;text-transform:uppercase;letter-spacing:.03em}
+.pill.type.t-mat{background:#E7F4EC;color:#1B7A43;border-color:#BFE4CD}
+.pill.type.t-hard{background:#F3EEFB;color:#6D28D9;border-color:#E0D4F5}
+.pill.type.t-serv{background:#FFF4E5;color:#B45309;border-color:#F5D9A8}
+.pill.type.t-other{background:var(--canvas-mute);color:var(--ink2)}
 .pill.sup{background:transparent;border-color:transparent;color:var(--ink3);font-weight:600}
 .row .right{display:flex;flex-direction:column;align-items:flex-end;gap:7px;flex:none}
 .row .when{color:var(--ink3);font-size:12px;font-weight:600;white-space:nowrap}
@@ -675,6 +686,7 @@ let RECORDS=[], view="ready", selected=new Set(), printerName=null, dymoOk=false
 // which slice of history to load (30d default keeps big histories fast; "all" pulls
 // everything). Both remembered per station.
 let operator=(()=>{try{return localStorage.getItem("cl_operator")||"";}catch(e){return"";}})();
+let authedOperator=false;   // true when `operator` came from the signed-in MS account (not typed)
 let historyWindow=(()=>{try{return localStorage.getItem("cl_histwin")||"30d";}catch(e){return"30d";}})();
 // Local test certs (fully filled) for trying the app/printer without a real approval.
 let testCerts=[]; try{ testCerts=JSON.parse(localStorage.getItem("cl_testcerts")||"[]"); }catch(e){}
@@ -886,7 +898,10 @@ function paintDymo(){
   el.className="print-status "+(dymoState==="ok"?"ok":dymoState==="noprinter"?"warn":"bad");
   el.innerHTML=`<span class="dot"></span> ${esc(t.banner(printerName))}<span class="arr">${dymoState==="ok"?"on this PC":"↻"}</span>`;
   updateActionBar();
-  const mp=document.getElementById("modalPrint"); if(mp){ const mc=modalRec?stickerCount([modalRec]):1; mp.disabled=!dymoOk; mp.textContent=dymoOk?(mc>1?`🖨 Print ${mc} stickers`:"🖨 Print this sticker"):t.btn(mc); }
+  const mp=document.getElementById("modalPrint"); if(mp){
+    if(modalRec && !isScannable(modalRec)){ mp.disabled=true; mp.textContent=`🔒 ${certType(modalRec)} cert — no sticker`; }
+    else { const mc=modalRec?stickerCount([modalRec]):1; mp.disabled=!dymoOk; mp.textContent=dymoOk?(mc>1?`🖨 Print ${mc} stickers`:"🖨 Print this sticker"):t.btn(mc); }
+  }
   paintSetup();   // keep the setup panel live if it's open
 }
 // Clicking status re-attempts the connection. If the browser blocked localhost access,
@@ -1260,6 +1275,19 @@ function buildLabelSetXml(rec){
 // One label per cert by default. QTY is just printed on the label as info — it
 // is NOT a copy multiplier. The "Copies" field (under the preview) is the only
 // thing that changes how many print per cert.
+// Cert TYPE from the Doc Control lane it was filed in (Material / Hardware / Service).
+// Only MATERIAL gets a physical scan sticker — hardware & outside-service certs are
+// filed for the record but nothing physical is labelled, so they show (with their tag)
+// but aren't selectable/printable here.
+function certType(rec){
+  const l=String(rec.lane||"").toLowerCase();
+  if(l.includes("hard")) return "Hardware";
+  if(l.includes("serv")) return "Service";      // outside services (plating, heat-treat, …)
+  if(l.includes("mat"))  return "Material";
+  return rec.lane ? rec.lane : "Material";       // legacy/blank lane → treat as material
+}
+function isScannable(rec){ return certType(rec)==="Material"; }
+const TYPE_CLASS={Material:"t-mat",Hardware:"t-hard",Service:"t-serv"};
 // Distinct JobBoss jobs on a cert (from the PO→JobBoss backfill). [] = no jobs.
 function jobList(rec){
   const js=Array.isArray(rec.jobs)?rec.jobs.filter(Boolean).map(String):[];
@@ -1299,6 +1327,9 @@ function confirmPrinted(stickers){
   });
 }
 async function printRecs(recs){
+  // Only material certs get a physical scan sticker; never print hardware/service certs.
+  recs=(recs||[]).filter(isScannable);
+  if(!recs.length){ toast("Only material certs get a sticker",""); return; }
   if(!dymoOk){ reconnectDymo(); return; }
   // Must know who's printing before anything is filed to History.
   if(!operator){ await openOperator(); if(!operator) return; }
@@ -1357,36 +1388,39 @@ function render(fresh){
     list.innerHTML="";
     recs.forEach(rec=>{
       const ln=lines(rec), sel=selected.has(rec.id);
+      const type=certType(rec), scan=isScannable(rec);
       const d=document.createElement("div");
-      d.className="row"+(sel?" sel":"")+(fresh.has(rec.id)?" fresh":"");
+      d.className="row"+(sel?" sel":"")+(fresh.has(rec.id)?" fresh":"")+(scan?"":" noscan");
       d.innerHTML=`
-        <div class="box">${sel?"✓":""}</div>
+        <div class="box${scan?"":" lock"}" title="${scan?"":esc(type)+" cert — no sticker"}">${scan?(sel?"✓":""):"🔒"}</div>
         <div class="body">
           <div class="l1">${esc(ln[0]||"(no part / PO)")}</div>
           <div class="l2">${esc(ln[1]||"")}</div>
           <div class="tags">
             ${rec._test?'<span class="pill test">TEST</span>':''}
+            <span class="pill type ${TYPE_CLASS[type]||"t-other"}">${esc(type)}</span>
             <span class="pill po">PO ${esc(rec.poNumber||"—")}</span>
             <span class="pill ht">HT# ${esc(rec.heat||"—")}</span>
             <span class="pill qty">QTY ${esc(rec.quantity||"—")}</span>
-            ${jobList(rec).length>1?`<span class="pill jobs">⧉ ${jobList(rec).length} jobs · ${jobList(rec).length} stickers</span>`:''}
+            ${scan&&jobList(rec).length>1?`<span class="pill jobs">⧉ ${jobList(rec).length} jobs · ${jobList(rec).length} stickers</span>`:''}
             <span class="pill sup">${esc(rec.supplier||"")}</span>
           </div>
         </div>
         <div class="right">
-          ${rec.printed?`<span class="printed-badge">✓ printed ${whenTxt(rec.printedAt)}${rec.printedBy?` · ${esc(rec.printedBy)}`:""}</span>`:`<span class="when">${whenTxt(rec.filedAt)}</span>`}
-          <button class="rowbtn" data-act="preview">${rec.printed?"Reprint":"Preview"}</button>
+          ${rec.printed?`<span class="printed-badge">✓ printed ${whenTxt(rec.printedAt)}${rec.printedBy?` · ${esc(rec.printedBy)}`:""}</span>`
+            :(scan?`<span class="when">${whenTxt(rec.filedAt)}</span>`:`<span class="noscan-note">No sticker · ${esc(type)} cert</span>`)}
+          <button class="rowbtn" data-act="preview">${rec.printed?"Reprint":(scan?"Preview":"View")}</button>
         </div>`;
-      d.onclick=(e)=>{ if(e.target.dataset.act==="preview"){openModal(rec);return;} toggle(rec.id,rec); };
+      d.onclick=(e)=>{ if(e.target.dataset.act==="preview"){openModal(rec);return;} if(scan) toggle(rec.id,rec); else openModal(rec); };
       d.onmouseenter=()=>showPreview(rec);
       list.appendChild(d);
     });
   }
-  document.getElementById("selAll").innerHTML=(()=>{const v=visible();const all=v.length&&v.every(r=>selected.has(r.id));return (all?"☑":"◻")+" "+(all?"Clear selection":"Select all shown");})();
+  document.getElementById("selAll").innerHTML=(()=>{const v=visible().filter(isScannable);const all=v.length&&v.every(r=>selected.has(r.id));return (all?"☑":"◻")+" "+(all?"Clear selection":"Select all shown");})();
   document.getElementById("clearTestBtn").style.display=testCerts.length?"inline-flex":"none";
   updateActionBar();
 }
-function toggle(id,rec){ selected.has(id)?selected.delete(id):selected.add(id); if(rec)showPreview(rec); render(); }
+function toggle(id,rec){ if(rec&&!isScannable(rec)) return; selected.has(id)?selected.delete(id):selected.add(id); if(rec)showPreview(rec); render(); }
 function updateActionBar(){
   const bar=document.getElementById("actionbar"), n=selected.size;
   if(n){ bar.classList.add("show");
@@ -1685,11 +1719,55 @@ function deleteTemplate(){
 function esc(s){return String(s==null?"":s).replace(/[<>&"']/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));}
 function toast(m,k){const t=document.getElementById("toast");t.textContent=m;t.className="toast show "+(k||"");clearTimeout(t._t);t._t=setTimeout(()=>t.className="toast "+(k||""),3600);}
 
-/* ===================== OPERATOR (who's printing) ===================== */
+/* ===================== OPERATOR (who's printing) =====================
+   Identity comes from the signed-in Microsoft account (SWA easyAuth) — the same
+   way the cert's approval signature knows the approver. `/.auth/me` returns the
+   logged-in user; we stamp their name on every print automatically. Manual entry
+   stays only as a fallback for when the app is opened outside the SWA (no auth). */
+function pickIdentityName(cp){
+  const claims=cp.claims||[];
+  const by=t=>{ const c=claims.find(c=>{const k=(c.typ||"").toLowerCase();return k===t||k.endsWith("/"+t);}); return c&&c.val; };
+  // Prefer a real display name, then UPN/email.
+  return by("name") || by("preferred_username") || by("emails") || cp.userDetails || "";
+}
+// Returns true if a signed-in identity was found and applied.
+async function resolveIdentity(){
+  try{
+    const r=await fetch("/.auth/me",{headers:{Accept:"application/json"},cache:"no-store"});
+    if(!r.ok) return false;
+    const j=await r.json();
+    const cp=j&&j.clientPrincipal;
+    if(!cp) return false;
+    const name=pickIdentityName(cp);
+    if(!name) return false;
+    operator=name; authedOperator=true;
+    try{ localStorage.setItem("cl_operator",operator); }catch(e){}
+    renderOperator();
+    return true;
+  }catch(e){ return false; }
+}
+// Boot: use the signed-in account. If there's no session yet, do a one-shot SSO
+// redirect (silent for anyone already signed into Microsoft on this machine). Guarded
+// so a misconfig can't loop, and skipped off-SWA (file://) where manual entry applies.
+async function initIdentity(){
+  if(await resolveIdentity()) return;
+  try{
+    if(!sessionStorage.getItem("cl_sso") && location.protocol.indexOf("http")===0){
+      sessionStorage.setItem("cl_sso","1");
+      location.href="/.auth/login/aad?post_login_redirect_uri="+encodeURIComponent(location.pathname+location.search);
+      return;
+    }
+  }catch(e){}
+  renderOperator();   // SSO unavailable → manual chip is the fallback
+}
 function knownOperators(){ try{ return JSON.parse(localStorage.getItem("cl_operators")||"[]"); }catch(e){ return []; } }
 function rememberOperator(name){ if(!name) return; let a=knownOperators().filter(n=>n!==name); a.unshift(name); a=a.slice(0,20); try{ localStorage.setItem("cl_operators",JSON.stringify(a)); }catch(e){} }
 function setOperator(name){ operator=(name||"").trim(); try{ localStorage.setItem("cl_operator",operator); }catch(e){} rememberOperator(operator); renderOperator(); }
-function renderOperator(){ const el=document.getElementById("opName"), chip=document.getElementById("opChip"); if(el) el.textContent=operator||"Set operator"; if(chip) chip.classList.toggle("unset",!operator); }
+function renderOperator(){
+  const el=document.getElementById("opName"), chip=document.getElementById("opChip");
+  if(el) el.textContent=operator||"Sign in";
+  if(chip){ chip.classList.toggle("unset",!operator); chip.title=authedOperator?`Signed in as ${operator} — click to switch account`:"Who's printing — stamped on each cert in History"; }
+}
 // Opens the "who's printing" modal; resolves once saved or dismissed. Print flow
 // awaits this so nothing is filed to History without a name attached.
 function openOperator(){
@@ -1722,12 +1800,17 @@ function setHistoryWindow(win){
 }
 
 /* ========================= WIRE ========================= */
-document.getElementById("opChip").onclick=openOperator;
+document.getElementById("opChip").onclick=()=>{
+  // Signed in via SSO → offer to switch the Microsoft account. Otherwise (no auth
+  // session, e.g. opened off-SWA) fall back to typing a name.
+  if(authedOperator){ if(confirm(`Signed in as ${operator}. Switch account?`)) location.href="/logout"; return; }
+  openOperator();
+};
 document.querySelectorAll("#histWin .hw-btn").forEach(b=>b.onclick=()=>setHistoryWindow(b.dataset.win));
-renderOperator();
+initIdentity();
 document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));t.classList.add("active");view=t.dataset.view;render();const l=document.getElementById("list");l.classList.remove("swap");void l.offsetWidth;l.classList.add("swap");});
 document.getElementById("q").addEventListener("input",()=>render());
-document.getElementById("selAll").onclick=()=>{const v=visible();const all=v.length&&v.every(r=>selected.has(r.id));v.forEach(r=>all?selected.delete(r.id):selected.add(r.id));render();};
+document.getElementById("selAll").onclick=()=>{const v=visible().filter(isScannable);const all=v.length&&v.every(r=>selected.has(r.id));v.forEach(r=>all?selected.delete(r.id):selected.add(r.id));render();};
 document.getElementById("clearSel").onclick=()=>{selected.clear();render();};
 document.getElementById("addTestBtn").onclick=addTestCert;
 document.getElementById("clearTestBtn").onclick=clearTestCerts;
