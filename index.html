@@ -166,7 +166,9 @@ header{
 
 /* ---------- Layout ---------- */
 main{flex:1;display:grid;grid-template-columns:1fr 380px;grid-template-rows:minmax(0,1fr);gap:18px;min-height:0;padding:4px 24px 20px}
-.list-col{display:flex;flex-direction:column;min-height:0}
+/* min-width:0 lets the 1fr list column actually shrink instead of growing to its
+   widest row and shoving the 380px preview/settings panel off the right edge. */
+.list-col{display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden}
 .list-head{display:flex;align-items:center;gap:12px;padding:6px 8px 10px;color:var(--ink3);font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase}
 .list-head .selall{margin-left:14px;display:flex;align-items:center;gap:7px;cursor:pointer;color:var(--primary);text-transform:none;letter-spacing:0;font-size:12.5px;font-weight:700}
 .testcert-btn{margin-left:auto;border:1px solid var(--line-strong);background:var(--surf);color:var(--ink2);border-radius:var(--r-pill);padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer;text-transform:none;letter-spacing:0;transition:var(--ease) .12s}
