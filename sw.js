@@ -2,7 +2,7 @@
    starts. Same-origin static assets: stale-while-revalidate. HTML navigations,
    /api, the DYMO localhost service, and CDN libs are ALWAYS network (never
    cached/intercepted). Bump CACHE to force a refresh on a breaking deploy. */
-const CACHE = "cert-labels-shell-v3";
+const CACHE = "cert-labels-shell-v4";
 const STATIC = /\.(?:js|css|png|jpe?g|svg|gif|webp|ico|woff2?|ttf|json|webmanifest)$/i;
 
 self.addEventListener("install", () => self.skipWaiting());

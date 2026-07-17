@@ -1441,9 +1441,18 @@ function scaleToFit(stage,sticker){
 function fields(rec){
   const dt=rec.printedAt||rec.filedAt; let date="";
   try{ date = dt ? new Date(dt).toLocaleDateString() : new Date().toLocaleDateString(); }catch(e){}
+  let material=(rec.material||"").trim();
+  let spec=(rec.spec||"").trim();
+  // De-dupe spec: service/plating certs put the spec INSIDE the process text
+  // (e.g. material="Anodize per MIL-A-8625 …", spec="MIL-A-8625"), which printed
+  // the spec twice on the sticker. If material already spells out the spec, drop it.
+  if(spec && material){
+    const norm=s=>String(s).toLowerCase().replace(/[^a-z0-9]/g,"");
+    if(norm(material).includes(norm(spec))) spec="";
+  }
   return {
     part:(rec.partNumber||"").trim(), po:(rec.poNumber||"").trim(),
-    material:(rec.material||"").trim(), spec:(rec.spec||"").trim(), size:(rec.size||"").trim(),
+    material, spec, size:(rec.size||"").trim(),
     heat:(rec.heat||"").trim(), qty:(rec.quantity||"").trim(),
     supplier:(rec.supplier||"").trim(), date,
   };
