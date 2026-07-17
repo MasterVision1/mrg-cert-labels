@@ -768,7 +768,8 @@ async function _loadRecords(initial){
     document.getElementById("liveLabel").textContent="Demo data (backend not wired)";
   }
   const fresh=new Set();
-  if(!initial) recs.forEach(r=>{ if(!knownIds.has(r.id) && !r.printed) fresh.add(r.id); });
+  // Only material certs surface here, so only they count as a fresh "ready to print".
+  if(!initial) recs.forEach(r=>{ if(!knownIds.has(r.id) && !r.printed && isScannable(r)) fresh.add(r.id); });
   recs.forEach(r=>knownIds.add(r.id));
   RECORDS=[...testCerts, ...recs];   // local test certs always on top
   // A brand-new approval should "load up as ready to print" the instant it lands —
@@ -1369,17 +1370,19 @@ function inHistoryWindow(rec){
   const t=new Date(rec.printedAt||rec.filedAt).getTime();
   return isNaN(t) || t>=Date.now()-30*86400000;
 }
-function visibleHistoryCount(){ return RECORDS.filter(r=>r.printed&&inHistoryWindow(r)).length; }
+function visibleHistoryCount(){ return RECORDS.filter(r=>r.printed&&inHistoryWindow(r)&&isScannable(r)).length; }
 function visible(){
   const q=document.getElementById("q").value.trim().toLowerCase();
-  let recs=RECORDS.slice().sort((a,b)=>new Date(view==="history"?(b.printedAt||b.filedAt):b.filedAt)-new Date(view==="history"?(a.printedAt||a.filedAt):a.filedAt));
+  // Only material certs get a scan sticker here — hardware/service certs are filed elsewhere
+  // and never appear in this station (not even as locked rows).
+  let recs=RECORDS.filter(isScannable).sort((a,b)=>new Date(view==="history"?(b.printedAt||b.filedAt):b.filedAt)-new Date(view==="history"?(a.printedAt||a.filedAt):a.filedAt));
   recs = view==="ready"? recs.filter(r=>!r.printed) : recs.filter(r=>r.printed&&inHistoryWindow(r));
   if(q) recs=recs.filter(r=>[r.partNumber,r.poNumber,r.material,r.spec,r.size,r.heat,r.supplier,r.printedBy].join(" ").toLowerCase().includes(q));
   return recs;
 }
 function render(fresh){
   fresh=fresh||new Set();
-  document.getElementById("cReady").textContent=RECORDS.filter(r=>!r.printed).length;
+  document.getElementById("cReady").textContent=RECORDS.filter(r=>!r.printed&&isScannable(r)).length;
   document.getElementById("cHist").textContent=visibleHistoryCount();
   document.getElementById("listTitle").textContent = view==="ready"?"Approved — ready to print":(historyWindow==="all"?"Printed history — all time":"Printed history — last 30 days");
   renderHistWin();
