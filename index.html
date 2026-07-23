@@ -382,6 +382,15 @@ kbd{background:var(--canvas-mute);border:1px solid var(--line);border-bottom-wid
 .btn-ghost:hover{background:var(--canvas-mute);border-color:var(--line-strong)}
 .modal .mf .grow{flex:1}
 .modal.wide{max-width:1020px}
+/* Print settings strip INSIDE the modal — mirrors the side-panel controls so
+   operators can pick label size / copies / template right where they print. */
+.mprint{padding:16px 22px;border-top:1px solid var(--line);background:var(--canvas-mute)}
+.mprint-title{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--ink3);margin-bottom:11px;display:flex;align-items:center;gap:7px}
+.mprint-title::before{content:"🖨";font-size:13px}
+.mprint-grid{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-end}
+.mprint-grid .set select{min-width:190px}
+.mprint-grid .set.row{gap:9px}
+.mprint-grid .set.row input[type=number]{width:78px}
 .mb.two{display:grid;grid-template-columns:1fr 1fr;gap:22px;padding:22px}
 .cap{margin-top:8px;color:var(--ink3);font-size:11.5px;text-align:center;font-weight:600}
 .fields{display:grid;grid-template-columns:1fr 1fr;gap:11px 14px;margin-top:18px}
@@ -575,6 +584,22 @@ kbd{background:var(--canvas-mute);border:1px solid var(--line);border-bottom-wid
         <div class="pdf-hd">Source cert packet</div>
         <div class="pdf-wrap" id="pdfWrap"></div>
       </div>
+    </div>
+    <div class="mprint" id="modalPrintSettings">
+      <div class="mprint-title">Print settings</div>
+      <div class="mprint-grid">
+        <div class="set"><label>Template</label><select id="mTplSel"></select></div>
+        <div class="set"><label>Label size</label><select id="mLabelSel"></select></div>
+        <div class="set" id="mCustomSizeRow" style="display:none"><label>Size (in)</label>
+          <span style="display:inline-flex;align-items:center;gap:6px">
+            <input type="number" id="mCustomW" step="0.05" min="0.5" max="6" style="width:64px" title="long side (feed direction)">
+            <span style="color:var(--ink3);font-weight:700">×</span>
+            <input type="number" id="mCustomH" step="0.05" min="0.3" max="6" style="width:64px" title="short side (across the roll)">
+          </span>
+        </div>
+        <div class="set row"><label>Copies</label><input type="number" id="mCopies" min="1" max="50" value="1"></div>
+      </div>
+      <div class="set-hint" id="mCustomSizeHint" style="display:none;margin-top:9px">Measure one label with a ruler: <b>long side × short side</b>, in inches.</div>
     </div>
     <div class="mf">
       <span class="grow"></span>
@@ -1596,6 +1621,7 @@ function openModal(rec){
   }
   document.getElementById("saveEdits").style.display="none";
   document.getElementById("editBadge").style.display="none";
+  syncSettingControls();   // mirror current label size / copies / template into the modal
   paintDymo();
   document.getElementById("overlay").classList.add("show");
 }
@@ -1623,10 +1649,9 @@ function closeModal(){document.getElementById("overlay").classList.remove("show"
 /* ===== Template builder ===== */
 let tplEdit=null;
 function refreshTemplatePicker(){
-  const sel=document.getElementById("tplSel");
-  sel.innerHTML=allTemplates().map(t=>`<option value="${t.key}">${esc(t.name)}</option>`).join("");
+  const html=allTemplates().map(t=>`<option value="${t.key}">${esc(t.name)}</option>`).join("");
   if(!allTemplates().some(t=>t.key===templateKey)) templateKey="standard";
-  sel.value=templateKey;
+  ["tplSel","mTplSel"].forEach(id=>{ const sel=document.getElementById(id); if(sel){ sel.innerHTML=html; sel.value=templateKey; } });
 }
 // Palette — each adds a row you can then fully edit. "Custom text" lets you type
 // literally anything, with {placeholders}: {part} {po} {material} {spec} {size} {heat} {qty} {supplier}
@@ -1891,26 +1916,44 @@ templateKey = lsGet("cl_tpl","standard");
 copies = Math.max(1, Math.min(50, parseInt(lsGet("cl_copies","1"))||1));
 customW = Math.max(0.5, Math.min(6, parseFloat(lsGet("cl_cw","2.25"))||2.25));
 customH = Math.max(0.3, Math.min(6, parseFloat(lsGet("cl_ch","1.25"))||1.25));
+// Print settings live in TWO places now — the side panel and the review-&-print
+// modal — because operators kept missing the side-panel controls and got confused.
+// Both sets of controls drive the same state via these shared setters, and every
+// change mirrors the value back onto whichever control the user isn't touching.
+function toggleCustomRows(){
+  const on=selLabelKey==="custom";
+  [["customSizeRow","customSizeHint"],["mCustomSizeRow","mCustomSizeHint"]].forEach(([r,h])=>{
+    const rr=document.getElementById(r), hh=document.getElementById(h);
+    if(rr) rr.style.display=on?"":"none"; if(hh) hh.style.display=on?"":"none";
+  });
+}
+function settingsRefresh(){ if(previewRec) showPreview(previewRec); if(modalRec) renderModalSticker(); paintDymo(); }
+// Write a value to every mirrored control EXCEPT one the user is actively editing
+// (so we never yank the caret while they type).
+function setVals(ids,v){ ids.forEach(id=>{ const el=document.getElementById(id); if(el && document.activeElement!==el && String(el.value)!==String(v)) el.value=v; }); }
+function applyTemplate(key){ templateKey=key; lsSet("cl_tpl",key); setVals(["tplSel","mTplSel"],key); settingsRefresh(); }
+function applyLabel(key){ selLabelKey=key; lsSet("cl_label",key); setVals(["labelSel","mLabelSel"],key); toggleCustomRows(); settingsRefresh(); }
+function applyCopies(n){ copies=Math.max(1,Math.min(50,parseInt(n)||1)); lsSet("cl_copies",String(copies)); setVals(["copies","mCopies"],copies); settingsRefresh(); }
+function applyCustom(w,h){ customW=Math.max(0.5,Math.min(6,parseFloat(w)||2.25)); customH=Math.max(0.3,Math.min(6,parseFloat(h)||1.25));
+  lsSet("cl_cw",String(customW)); lsSet("cl_ch",String(customH)); setVals(["customW","mCustomW"],customW); setVals(["customH","mCustomH"],customH); settingsRefresh(); }
+// Push current state onto the modal controls whenever the modal opens.
+function syncSettingControls(){ setVals(["tplSel","mTplSel"],templateKey); setVals(["labelSel","mLabelSel"],selLabelKey); setVals(["copies","mCopies"],copies); setVals(["customW","mCustomW"],customW); setVals(["customH","mCustomH"],customH); toggleCustomRows(); }
 (function initSettings(){
-  const tpl=document.getElementById("tplSel");
-  refreshTemplatePicker();   // includes built-in + custom; fixes templateKey if stale
-  const ls=document.getElementById("labelSel");
-  ls.innerHTML=CONFIG.labelTypes.map(l=>`<option value="${l.key}">${esc(l.name)}</option>`).join("");
-  ls.value=selLabelKey;
-  document.getElementById("copies").value=copies;
-  const cwI=document.getElementById("customW"), chI=document.getElementById("customH");
-  cwI.value=customW; chI.value=customH;
-  const toggleCustom=()=>{ const on=selLabelKey==="custom";
-    document.getElementById("customSizeRow").style.display=on?"":"none";
-    document.getElementById("customSizeHint").style.display=on?"":"none"; };
-  toggleCustom();
-  const refresh=()=>{ if(previewRec) showPreview(previewRec); if(modalRec) renderModalSticker(); updateActionBar(); };
-  tpl.onchange=()=>{ templateKey=tpl.value; lsSet("cl_tpl",templateKey); refresh(); };
-  ls.onchange=()=>{ selLabelKey=ls.value; lsSet("cl_label",selLabelKey); toggleCustom(); refresh(); };
-  const onCustom=()=>{ customW=Math.max(0.5,Math.min(6,parseFloat(cwI.value)||2.25)); customH=Math.max(0.3,Math.min(6,parseFloat(chI.value)||1.25));
-    lsSet("cl_cw",String(customW)); lsSet("cl_ch",String(customH)); refresh(); };
-  cwI.oninput=chI.oninput=onCustom;
-  document.getElementById("copies").onchange=e=>{ copies=Math.max(1,Math.min(50,parseInt(e.target.value)||1)); e.target.value=copies; lsSet("cl_copies",String(copies)); refresh(); };
+  refreshTemplatePicker();   // fills tplSel + mTplSel (built-in + custom); fixes stale templateKey
+  const lsHtml=CONFIG.labelTypes.map(l=>`<option value="${l.key}">${esc(l.name)}</option>`).join("");
+  ["labelSel","mLabelSel"].forEach(id=>{ const s=document.getElementById(id); if(s){ s.innerHTML=lsHtml; s.value=selLabelKey; } });
+  setVals(["copies","mCopies"],copies);
+  setVals(["customW","mCustomW"],customW); setVals(["customH","mCustomH"],customH);
+  toggleCustomRows();
+  const on=(id,ev,fn)=>{ const el=document.getElementById(id); if(el) el[ev]=fn; };
+  ["tplSel","mTplSel"].forEach(id=>on(id,"onchange",e=>applyTemplate(e.target.value)));
+  ["labelSel","mLabelSel"].forEach(id=>on(id,"onchange",e=>applyLabel(e.target.value)));
+  ["copies","mCopies"].forEach(id=>on(id,"onchange",e=>applyCopies(e.target.value)));
+  const g=id=>document.getElementById(id);
+  const wireCustom=(wid,hid)=>{ const w=g(wid),h=g(hid);
+    if(w) w.oninput=()=>applyCustom(w.value, g(hid)?.value);
+    if(h) h.oninput=()=>applyCustom(g(wid)?.value, h.value); };
+  wireCustom("customW","customH"); wireCustom("mCustomW","mCustomH");
 })();
 
 /* PWA install is handled by the App Store install bridge in <head>
